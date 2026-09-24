@@ -206,9 +206,22 @@ func TestProblemTypes(t *testing.T) {
 		t.Errorf("Routes.WriteError() with two ProblemTypes = %s, want %s", rec.Body, taken)
 	}
 
-	// Without the / or the #, the name of a kind would run into the base.
-	for _, base := range []string{"", "https://shortlink.example/problems", "https://shortlink.example/problems/not_found", "/problems/", "problems#", ":/"} {
-		want := fmt.Sprintf("rest: ProblemTypes(%q): want an absolute URI that ends in / or #", base)
+	// A path from the root of the service, as the default one.
+	routes = rest.Mount(http.NewServeMux(), newAPI(), rest.ProblemTypes("/errors/"))
+	rec = httptest.NewRecorder()
+	routes.WriteError(rec, httptest.NewRequest("GET", "/", nil), tyr.AlreadyExists("code is taken"))
+	if !strings.HasPrefix(rec.Body.String(), `{"type":"/errors/already_exists",`) {
+		t.Errorf("Routes.WriteError() with a path = %s, want the type /errors/already_exists", rec.Body)
+	}
+
+	// Without the / or the #, the name of a kind would run into the base; a
+	// relative path would mean another type at every path, and //host is
+	// no path.
+	for _, base := range []string{
+		"", "https://shortlink.example/problems", "https://shortlink.example/problems/not_found",
+		"/problems", "problems/", "problems#", "./problems/", "//shortlink.example/problems/", ":/",
+	} {
+		want := fmt.Sprintf("rest: ProblemTypes(%q): want an absolute URI or a path from the root that ends in / or #", base)
 		if got := panicValue(func() { rest.ProblemTypes(base) }); got != want {
 			t.Errorf("ProblemTypes(%q) panicked with %v, want %q", base, got, want)
 		}

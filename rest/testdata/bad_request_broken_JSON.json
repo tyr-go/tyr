@@ -1,1 +1,1 @@
-{"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindInvalidArgument","title":"Invalid Argument","status":400,"detail":"validation failed","kind":"invalid_argument","errors":[{"pointer":"","detail":"invalid JSON at byte offset 13: invalid character ',' at start of value"}]}
+{"type":"/problems/invalid_argument","title":"Invalid Argument","status":400,"detail":"validation failed","kind":"invalid_argument","errors":[{"pointer":"","detail":"invalid JSON at byte offset 13: invalid character ',' at start of value"}]}

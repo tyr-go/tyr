@@ -127,8 +127,8 @@ func ExampleAPI_MapError() {
 		fmt.Println(rec.Code, rec.Body)
 	}
 	// Output:
-	// 404 {"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindNotFound","title":"Not Found","status":404,"detail":"link not found","kind":"not_found"}
-	// 500 {"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindInternal","title":"Internal Error","status":500,"detail":"internal error","kind":"internal"}
+	// 404 {"type":"/problems/not_found","title":"Not Found","status":404,"detail":"link not found","kind":"not_found"}
+	// 500 {"type":"/problems/internal","title":"Internal Error","status":500,"detail":"internal error","kind":"internal"}
 }
 
 func ExampleRequestInfo() {

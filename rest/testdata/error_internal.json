@@ -1,1 +1,1 @@
-{"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindInternal","title":"Internal Error","status":500,"detail":"internal error","kind":"internal"}
+{"type":"/problems/internal","title":"Internal Error","status":500,"detail":"internal error","kind":"internal"}

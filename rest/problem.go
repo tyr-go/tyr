@@ -16,7 +16,7 @@ import (
 // problem is a problem details object of RFC 9457 with the members of tyr.
 // Its doc tags describe it in the OpenAPI document.
 type problem struct {
-	Type    string         `json:"type" doc:"The URI of the problem type: one per kind, or about:blank for a problem of the HTTP request itself."`
+	Type    string         `json:"type" doc:"The URI reference of the problem type: one per kind, or about:blank for a problem of the HTTP request itself."`
 	Title   string         `json:"title" doc:"The title of the problem type."`
 	Status  int            `json:"status" doc:"The HTTP status."`
 	Detail  string         `json:"detail,omitempty" doc:"The message of the error."`
@@ -110,8 +110,7 @@ func writeError(ctx context.Context, logger *slog.Logger, w http.ResponseWriter,
 	if e != nil && !internal(e.Kind) {
 		k, detail = e.Kind, e.Message
 	}
-	_, title := kindType(k)
-	p := problem{Type: m.problemType(k), Title: title, Status: statusOf(k), Detail: detail, Kind: k.String()}
+	p := problem{Type: m.problemType(k), Title: kindTitle(k), Status: statusOf(k), Detail: detail, Kind: k.String()}
 	if k != tyr.KindInternal {
 		if v, ok := e.Details.(tyr.Violations); ok {
 			p.Errors = v
@@ -128,48 +127,46 @@ func writeError(ctx context.Context, logger *slog.Logger, w http.ResponseWriter,
 }
 
 // defaultProblemTypes is the base of the types of problems without
-// ProblemTypes: the documentation of package tyr, where the constant of
-// every kind has an anchor.
-const defaultProblemTypes = "https://pkg.go.dev/github.com/tyr-go/tyr#"
+// ProblemTypes: a path from the root of the service, which RFC 9457 allows
+// for a relative type URI, so that the service owns the types.
+const defaultProblemTypes = "/problems/"
 
 // problemType returns the type of the problems of kind k, which rest
-// knows: the base of ProblemTypes with the name of k or, by default, the
-// documentation of k.
+// knows: the base of ProblemTypes, or the default one, with the name of k.
 func (m *mount) problemType(k tyr.Kind) string {
-	if m.problemBase != "" {
-		return m.problemBase + k.String()
+	base := m.problemBase
+	if base == "" {
+		base = defaultProblemTypes
 	}
-	constant, _ := kindType(k)
-	return defaultProblemTypes + constant
+	return base + k.String()
 }
 
-// kindType returns the name of the constant of kind k in package tyr, whose
-// documentation is the default type of the problems of k, and the title of
-// that type. A kind rest doesn't know is internal.
-func kindType(k tyr.Kind) (constant, title string) {
+// kindTitle returns the title of the problem type of kind k. A kind rest
+// doesn't know is internal.
+func kindTitle(k tyr.Kind) string {
 	switch k {
 	case tyr.KindInvalidArgument:
-		return "KindInvalidArgument", "Invalid Argument"
+		return "Invalid Argument"
 	case tyr.KindUnauthenticated:
-		return "KindUnauthenticated", "Unauthenticated"
+		return "Unauthenticated"
 	case tyr.KindPermissionDenied:
-		return "KindPermissionDenied", "Permission Denied"
+		return "Permission Denied"
 	case tyr.KindNotFound:
-		return "KindNotFound", "Not Found"
+		return "Not Found"
 	case tyr.KindAlreadyExists:
-		return "KindAlreadyExists", "Already Exists"
+		return "Already Exists"
 	case tyr.KindFailedPrecondition:
-		return "KindFailedPrecondition", "Failed Precondition"
+		return "Failed Precondition"
 	case tyr.KindResourceExhausted:
-		return "KindResourceExhausted", "Resource Exhausted"
+		return "Resource Exhausted"
 	case tyr.KindCanceled:
-		return "KindCanceled", "Canceled"
+		return "Canceled"
 	case tyr.KindUnavailable:
-		return "KindUnavailable", "Unavailable"
+		return "Unavailable"
 	case tyr.KindDeadlineExceeded:
-		return "KindDeadlineExceeded", "Deadline Exceeded"
+		return "Deadline Exceeded"
 	}
-	return "KindInternal", "Internal Error"
+	return "Internal Error"
 }
 
 // statusOf returns the HTTP status of errors of kind k.

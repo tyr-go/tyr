@@ -344,7 +344,7 @@ func (b *openAPIBuilder) errors(kinds []tyr.Kind) ordered[*response] {
 	titles := make(map[int][]string)
 	for _, k := range all {
 		status := statusOf(k)
-		_, title := kindType(k)
+		title := kindTitle(k)
 		if !slices.Contains(titles[status], title) {
 			titles[status] = append(titles[status], title)
 		}
@@ -457,12 +457,13 @@ func resultField(t reflect.Type, index []int) reflect.StructField {
 }
 
 // describeProblem adds to the schema of a problem what its Go type can't
-// say: the type is a URI, and the kind one of those tyr defines.
+// say: the type is a URI reference, relative by default, and the kind one
+// of those tyr defines.
 func describeProblem(sch *jsonschema.Schema) {
 	for _, p := range sch.Properties {
 		switch p.Name {
 		case "type":
-			p.Schema.Format = "uri"
+			p.Schema.Format = "uri-reference"
 		case "kind":
 			for k := tyr.Kind(0); !strings.HasPrefix(k.String(), "Kind("); k++ {
 				p.Schema.Enum = append(p.Schema.Enum, quote(k.String()))

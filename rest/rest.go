@@ -73,13 +73,12 @@
 //   - internal and unknown kinds: 500
 //
 // The problem's type identifies the kind, and clients may tell errors apart
-// by it: by default, it is the documentation of the kind, such as
-// https://pkg.go.dev/github.com/tyr-go/tyr#KindNotFound, and [ProblemTypes]
-// gives the kinds URIs of the service's own. The title names the kind, such
-// as Not Found or Already Exists, the detail is the error's message, and
-// the kind member is the kind's name:
+// by it: by default, it is /problems/ and the name of the kind, a URI
+// relative to the service, and [ProblemTypes] gives the kinds another base.
+// The title names the kind, such as Not Found or Already Exists, the detail
+// is the error's message, and the kind member is the kind's name:
 //
-//	{"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindNotFound","title":"Not Found","status":404,
+//	{"type":"/problems/not_found","title":"Not Found","status":404,
 //	 "detail":"link not found","kind":"not_found"}
 //
 // [tyr.Violations] go in its errors member, other details in its details
@@ -222,22 +221,37 @@ func Challenge(challenge string) MountOption {
 
 // ProblemTypes sets the base of the URIs that identify the problem types of
 // kinds: the type of the problems of kind not_found becomes base+"not_found".
-// The base must be an absolute URI that ends in "/" or "#", such as
-// "https://shortlink.example/problems/"; ProblemTypes panics otherwise.
+// The base is an absolute URI, such as "https://errors.example.com/links/",
+// or a path from the root of the service, such as "/errors/", and ends in
+// "/" or "#"; ProblemTypes panics otherwise.
 //
-// Without ProblemTypes, the type of a kind is its documentation, such as
-// https://pkg.go.dev/github.com/tyr-go/tyr#KindNotFound. Clients may tell
-// errors apart by their types, so the types are part of the API of a
-// service: [Routes.WriteError] writes those of the operations, and
-// [Routes.OpenAPI] shows them.
+// Without ProblemTypes, the base is "/problems/": the type of kind
+// not_found is /problems/not_found, a URI relative to the service, with its
+// full path, as RFC 9457 allows, so that the service owns the types of its
+// errors. Clients may tell errors apart by their types, so the types are
+// part of the API of a service: [Routes.WriteError] writes those of the
+// operations, and [Routes.OpenAPI] shows them.
 func ProblemTypes(base string) MountOption {
-	u, err := url.Parse(base)
-	if err != nil || !u.IsAbs() || !strings.HasSuffix(base, "/") && !strings.HasSuffix(base, "#") {
-		panic(fmt.Sprintf("rest: ProblemTypes(%q): want an absolute URI that ends in / or #", base))
+	if !isProblemBase(base) {
+		panic(fmt.Sprintf("rest: ProblemTypes(%q): want an absolute URI or a path from the root that ends in / or #", base))
 	}
 	return func(m *mount) {
 		m.problemBase = base
 	}
+}
+
+// isProblemBase reports whether base can be the base of problem types, as
+// described at ProblemTypes.
+func isProblemBase(base string) bool {
+	if !strings.HasSuffix(base, "/") && !strings.HasSuffix(base, "#") {
+		return false
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return false
+	}
+	// A path from the root starts with one "/": "//host" names a host.
+	return u.IsAbs() || u.Scheme == "" && u.Host == "" && strings.HasPrefix(base, "/") && !strings.HasPrefix(base, "//")
 }
 
 // Mount seals api and registers a handler on mux for every operation that

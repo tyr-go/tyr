@@ -1,1 +1,1 @@
-{"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindUnauthenticated","title":"Unauthenticated","status":401,"detail":"log in first","kind":"unauthenticated"}
+{"type":"/problems/unauthenticated","title":"Unauthenticated","status":401,"detail":"log in first","kind":"unauthenticated"}

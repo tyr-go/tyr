@@ -135,12 +135,12 @@ func TestLinks(t *testing.T) {
 
 		// The errors of the store, translated by MapError.
 		resp, body = s.do(t, "POST", "/links", `{"url":"https://go.dev","code":"go-docs"}`)
-		const taken = `{"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindAlreadyExists","title":"Already Exists","status":409,"detail":"code is taken","kind":"already_exists"}`
+		const taken = `{"type":"/problems/already_exists","title":"Already Exists","status":409,"detail":"code is taken","kind":"already_exists"}`
 		if resp.StatusCode != http.StatusConflict || body != taken {
 			t.Errorf("create again = %d %s, want 409 %s", resp.StatusCode, body, taken)
 		}
 		resp, body = s.do(t, "GET", "/links/nope", "")
-		const notFound = `{"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindNotFound","title":"Not Found","status":404,"detail":"link not found","kind":"not_found"}`
+		const notFound = `{"type":"/problems/not_found","title":"Not Found","status":404,"detail":"link not found","kind":"not_found"}`
 		if resp.StatusCode != http.StatusNotFound || body != notFound {
 			t.Errorf("get a missing link = %d %s, want 404 %s", resp.StatusCode, body, notFound)
 		}
@@ -163,7 +163,7 @@ func TestRandomCode(t *testing.T) {
 
 func TestCreateInvalid(t *testing.T) {
 	violation := func(pointer, detail string) string {
-		return `{"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindInvalidArgument","title":"Invalid Argument","status":400,"detail":"validation failed",` +
+		return `{"type":"/problems/invalid_argument","title":"Invalid Argument","status":400,"detail":"validation failed",` +
 			`"kind":"invalid_argument","errors":[{"pointer":"` + pointer + `","detail":"` + detail + `"}]}`
 	}
 	tests := []struct {
@@ -259,7 +259,7 @@ func TestDelete(t *testing.T) {
 		// Only the admin deletes links; a client without a token learns how
 		// to authenticate.
 		resp, body := s.do(t, "DELETE", "/links/golang", "")
-		const unauthenticated = `{"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindUnauthenticated","title":"Unauthenticated","status":401,"detail":"a valid bearer token is required","kind":"unauthenticated"}`
+		const unauthenticated = `{"type":"/problems/unauthenticated","title":"Unauthenticated","status":401,"detail":"a valid bearer token is required","kind":"unauthenticated"}`
 		if resp.StatusCode != http.StatusUnauthorized || resp.Header.Get("WWW-Authenticate") != `Bearer realm="shortlink"` || body != unauthenticated {
 			t.Errorf("delete without a token = %d %v %s, want 401 with a challenge", resp.StatusCode, resp.Header, body)
 		}

@@ -37,7 +37,7 @@ func ExampleMount() {
 	}
 	// Output:
 	// 200 "https://go.dev"
-	// 404 {"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindNotFound","title":"Not Found","status":404,"detail":"link \"rust\" not found","kind":"not_found"}
+	// 404 {"type":"/problems/not_found","title":"Not Found","status":404,"detail":"link \"rust\" not found","kind":"not_found"}
 }
 
 func ExampleProblemTypes() {

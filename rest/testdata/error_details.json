@@ -1,1 +1,1 @@
-{"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindFailedPrecondition","title":"Failed Precondition","status":409,"detail":"link expired","kind":"failed_precondition","details":{"expired_at":"2026-01-01"}}
+{"type":"/problems/failed_precondition","title":"Failed Precondition","status":409,"detail":"link expired","kind":"failed_precondition","details":{"expired_at":"2026-01-01"}}

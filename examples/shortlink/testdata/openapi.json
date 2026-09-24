@@ -412,8 +412,8 @@
         "properties": {
           "type": {
             "type": "string",
-            "format": "uri",
-            "description": "The URI of the problem type: one per kind, or about:blank for a problem of the HTTP request itself."
+            "format": "uri-reference",
+            "description": "The URI reference of the problem type: one per kind, or about:blank for a problem of the HTTP request itself."
           },
           "title": {
             "type": "string",
