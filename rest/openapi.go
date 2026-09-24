@@ -33,6 +33,14 @@ import (
 // reads and writes, as json/v2 does; the validate tags of requests add
 // their constraints, and doc tags describe fields.
 //
+// The schemas fall short of the server in two ways. The schema of an
+// element of a slice or a map is that of its type, with the constraints of
+// its validate tags, which the server doesn't check without dive. And some
+// JSON fits the schema of a request but doesn't decode, since JSON Schema
+// can't tell how a value is written, such as an integer written as 1.0, a
+// number beyond the range of its type, a time that time.Parse doesn't
+// read, or a string that a type which parses itself rejects.
+//
 // OpenAPI panics if info has no Title or Version, a route has a method that
 // OpenAPI 3.1 doesn't know, two routes of different hosts have the same
 // method and path, or a type of a request or a result has a field that

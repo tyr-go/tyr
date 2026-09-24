@@ -309,8 +309,10 @@ func TestWrite(t *testing.T) {
 
 // Where the input schemas and the core differ, as check name → pointer →
 // why. Looser: the core rejects the member and the schema accepts it, so a
-// request that fits the schema may still fail; the list is the whole of
-// it. Stricter: the schema rejects what the core accepts.
+// request that fits the schema may still fail; for the values that json/v2
+// writes, the list is the whole of it, and TestDecodeGaps holds the JSON
+// that fits a schema but doesn't decode. Stricter: the schema rejects what
+// the core accepts.
 var (
 	looser = map[string]map[string]string{
 		"invalid formats": {

@@ -153,6 +153,14 @@ func MaxBodyBytes(n int64) HandlerOption {
 // the validate tags of requests add their constraints, and doc tags
 // describe fields.
 //
+// The schemas fall short of the server in two ways. The schema of an
+// element of a slice or a map is that of its type, with the constraints of
+// its validate tags, which the server doesn't check without dive. And some
+// JSON fits the schema of a request but doesn't decode, since JSON Schema
+// can't tell how a value is written, such as an integer written as 1.0, a
+// number beyond the range of its type, a time that time.Parse doesn't
+// read, or a string that a type which parses itself rejects.
+//
 // The document is made once, by Handler, which panics on a type of a
 // request or a result with a field that JSON can't carry, such as a
 // time.Duration. rpc.discover isn't an operation: the interceptors don't

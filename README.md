@@ -97,7 +97,9 @@ Týr, the Norse god of law and oaths, put his hand in Fenrir's jaws as the pledg
 - JSON-RPC takes params by name only.
 - Validation implements a subset of the tags of go-playground/validator, with the semantics of v10.30.5: `required`, `omitempty`, `min`, `max`, `len`, `gt`, `gte`, `lt`, `lte`, `oneof`, `email`, `url`, `http_url` and `uuid`, without `dive` and `|`. An unknown rule panics at startup. Rules between fields go in a `Validate` method; an adapter for all of go-playground is planned.
 - The typed client speaks JSON-RPC and sends one call per request; a REST client is planned.
-- The schemas of requests say what the `validate` tags demand as far as JSON Schema can: `email` and `url` become formats, which the rules of go-playground don't match exactly, and a `Validate` method doesn't show. The schemas of results have no constraints: the server doesn't check what it writes.
+- The schemas of requests say what the `validate` tags demand as far as JSON Schema can: `email` and `url` become formats, which the rules of go-playground don't match exactly, the rules of a type that JSON carries by methods of its own, such as an enum written as its name, add nothing, and a `Validate` method doesn't show. The schemas of results have no constraints: the server doesn't check what it writes.
+- The schema of an element of a slice or a map is that of its type, with the constraints of its `validate` tags, but without `dive` the server doesn't check elements: `{"items":[{}]}` passes although the schema of an item requires its members. Check elements in a `Validate` method.
+- Some JSON fits the schema of a request and still gets a 400, since JSON Schema can't tell how a value is written: an integer written as `1.0` or `1e2`, an integer beyond the range of its type or a number with the `string` option beyond it (the schemas bound integers of 8, 16 and 32 bits), a `float32` beyond its range, a time in RFC 3339 that `time.Parse` doesn't read, such as with a lowercase `t` or a leap second, bytes not in base64, a key of a map that isn't of the type of its keys, a string that a type which parses itself rejects, and a name given twice. Send values as `encoding/json` writes them, as generated clients do.
 - Authorization belongs in interceptors, not in the middleware of a route: over JSON-RPC, an operation has no route of its own.
 
 ## Examples
@@ -318,7 +320,7 @@ mux.Handle("POST /rpc", jsonrpc.Handler(api, jsonrpc.Discover(tyr.Info{Title: "l
 // => error 404: not found
 ```
 
-The schemas say what the server reads and writes, as `encoding/json/v2` does. A member of a request is required if the server rejects the request without it, and a type whose schemas of requests and results differ gets two, such as `Link` and `LinkInput`.
+The schemas say what the server reads and writes, as `encoding/json/v2` does, but for the gaps that [Limitations](#limitations) lists: the elements of slices and maps, which the server doesn't check, and JSON that fits a schema but doesn't decode. A member of a request is required if the server rejects the request without it, and a type whose schemas of requests and results differ gets two, such as `Link` and `LinkInput`.
 
 ### [Log with the request ID and the operation](https://pkg.go.dev/github.com/tyr-go/tyr#example-NewLogHandler)
 
