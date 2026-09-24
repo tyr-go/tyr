@@ -4,7 +4,7 @@ go 1.27
 
 require (
 	github.com/go-playground/validator/v10 v10.30.5
-	github.com/tyr-go/tyr v0.7.0
+	github.com/tyr-go/tyr v0.8.0
 )
 
 require (

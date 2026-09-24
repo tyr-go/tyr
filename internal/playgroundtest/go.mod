@@ -5,7 +5,7 @@ module github.com/tyr-go/tyr/internal/playgroundtest
 go 1.27
 
 require (
-	github.com/tyr-go/tyr v0.7.0
+	github.com/tyr-go/tyr v0.8.0
 	github.com/tyr-go/tyr/validate/playground v0.0.0-00010101000000-000000000000
 )
 
