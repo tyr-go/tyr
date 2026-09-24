@@ -1,0 +1,411 @@
+{
+  "openrpc": "1.4.1",
+  "info": {
+    "title": "shortlink",
+    "description": "A URL shortener built on tyr, over REST and JSON-RPC.",
+    "version": "1.0.0"
+  },
+  "methods": [
+    {
+      "name": "links.create",
+      "summary": "Create a short link",
+      "description": "Without a code, the link gets a random one of 7 characters.",
+      "tags": [
+        {
+          "name": "links"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "url",
+          "description": "Where the link leads: an http or https URL.",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uri",
+            "minLength": 1,
+            "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://[^/?#]"
+          }
+        },
+        {
+          "name": "code",
+          "description": "The code of the link, of a-z, 0-9 and '-'. Without it, the link gets a random one.",
+          "schema": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 16
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/Created"
+        }
+      },
+      "errors": [
+        {
+          "code": -32602,
+          "message": "invalid argument",
+          "data": {
+            "kind": "invalid_argument"
+          }
+        },
+        {
+          "code": 409,
+          "message": "already exists",
+          "data": {
+            "kind": "already_exists"
+          }
+        }
+      ],
+      "examples": [
+        {
+          "name": "with a code",
+          "params": [
+            {
+              "name": "url",
+              "value": "https://go.dev/doc/"
+            },
+            {
+              "name": "code",
+              "value": "go-docs"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": {
+              "code": "go-docs",
+              "url": "https://go.dev/doc/",
+              "created_at": "2026-09-24T12:00:00Z"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "links.get",
+      "summary": "Get a link",
+      "tags": [
+        {
+          "name": "links"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "code",
+          "description": "The code of the link.",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/Link"
+        }
+      },
+      "errors": [
+        {
+          "code": -32602,
+          "message": "invalid argument",
+          "data": {
+            "kind": "invalid_argument"
+          }
+        },
+        {
+          "code": 404,
+          "message": "not found",
+          "data": {
+            "kind": "not_found"
+          }
+        }
+      ],
+      "examples": [
+        {
+          "name": "go-docs",
+          "params": [
+            {
+              "name": "code",
+              "value": "go-docs"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": {
+              "code": "go-docs",
+              "url": "https://go.dev/doc/",
+              "created_at": "2026-09-24T12:00:00Z"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "links.follow",
+      "summary": "Follow a link",
+      "description": "Over REST, the short link itself: a redirect to where it leads. Over JSON-RPC, where it leads.",
+      "tags": [
+        {
+          "name": "links"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "code",
+          "description": "The code of the link.",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/FollowRes"
+        }
+      },
+      "errors": [
+        {
+          "code": -32602,
+          "message": "invalid argument",
+          "data": {
+            "kind": "invalid_argument"
+          }
+        },
+        {
+          "code": 404,
+          "message": "not found",
+          "data": {
+            "kind": "not_found"
+          }
+        }
+      ],
+      "examples": [
+        {
+          "name": "go-docs",
+          "params": [
+            {
+              "name": "code",
+              "value": "go-docs"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": {
+              "url": "https://go.dev/doc/"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "links.delete",
+      "summary": "Delete a link",
+      "tags": [
+        {
+          "name": "links"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "code",
+          "description": "The code of the link.",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "type": "object"
+        }
+      },
+      "errors": [
+        {
+          "code": -32602,
+          "message": "invalid argument",
+          "data": {
+            "kind": "invalid_argument"
+          }
+        },
+        {
+          "code": 401,
+          "message": "unauthenticated",
+          "data": {
+            "kind": "unauthenticated"
+          }
+        },
+        {
+          "code": 403,
+          "message": "permission denied",
+          "data": {
+            "kind": "permission_denied"
+          }
+        },
+        {
+          "code": 404,
+          "message": "not found",
+          "data": {
+            "kind": "not_found"
+          }
+        }
+      ]
+    },
+    {
+      "name": "links.purge",
+      "summary": "Delete the links to a host",
+      "description": "For a host that serves malware, say.",
+      "tags": [
+        {
+          "name": "links"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "host",
+          "description": "The host whose links to delete, such as example.com.",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/PurgeRes"
+        }
+      },
+      "errors": [
+        {
+          "code": -32602,
+          "message": "invalid argument",
+          "data": {
+            "kind": "invalid_argument"
+          }
+        },
+        {
+          "code": 401,
+          "message": "unauthenticated",
+          "data": {
+            "kind": "unauthenticated"
+          }
+        },
+        {
+          "code": 403,
+          "message": "permission denied",
+          "data": {
+            "kind": "permission_denied"
+          }
+        }
+      ],
+      "examples": [
+        {
+          "name": "example.com",
+          "params": [
+            {
+              "name": "host",
+              "value": "example.com"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": {
+              "purged": 2
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "components": {
+    "schemas": {
+      "Created": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "The code of the link: the path of the short link."
+          },
+          "url": {
+            "type": "string",
+            "description": "Where the link leads."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the link was created."
+          }
+        },
+        "required": [
+          "code",
+          "url",
+          "created_at"
+        ]
+      },
+      "FollowRes": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Where the link leads."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "Link": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "The code of the link: the path of the short link."
+          },
+          "url": {
+            "type": "string",
+            "description": "Where the link leads."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the link was created."
+          }
+        },
+        "required": [
+          "code",
+          "url",
+          "created_at"
+        ]
+      },
+      "PurgeRes": {
+        "type": "object",
+        "properties": {
+          "purged": {
+            "type": "integer",
+            "description": "The number of links deleted."
+          }
+        },
+        "required": [
+          "purged"
+        ]
+      }
+    }
+  }
+}

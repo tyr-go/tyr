@@ -59,9 +59,15 @@ func Authenticate(callers map[string]Caller) func(http.Handler) http.Handler {
 var roleKey = tyr.NewMetaKey[string]("authz.role")
 
 // Require returns an option for operations that only callers with the role
-// may call. Interceptor enforces it.
+// may call. Interceptor enforces it, and the option declares the errors
+// that Interceptor returns, for the documents of the API.
 func Require(role string) tyr.OpOption {
-	return roleKey.Option(role)
+	set := roleKey.Option(role)
+	errs := tyr.Errors(tyr.KindUnauthenticated, tyr.KindPermissionDenied)
+	return func(op *tyr.Operation) {
+		set(op)
+		errs(op)
+	}
 }
 
 // Interceptor rejects a call of an operation that requires a role unless

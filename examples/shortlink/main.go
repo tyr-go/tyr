@@ -10,6 +10,11 @@
 //	curl -i -X DELETE localhost:8080/links/<code> -H 'Authorization: Bearer secret'
 //	curl -i localhost:8080/rpc -H 'Content-Type: application/json' -H 'Authorization: Bearer secret' \
 //		-d '{"jsonrpc":"2.0","method":"links.purge","params":{"host":"go.dev"},"id":1}'
+//
+// It describes itself in an OpenAPI document and an OpenRPC one:
+//
+//	curl localhost:8080/openapi.json
+//	curl localhost:8080/rpc -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","method":"rpc.discover","id":1}'
 package main
 
 import (
@@ -97,13 +102,23 @@ func newAPI(svc *links.Service, logger *slog.Logger) *tyr.API {
 	return api
 }
 
+// info describes the service in its documents.
+var info = tyr.Info{
+	Title:       "shortlink",
+	Version:     "1.0.0",
+	Description: "A URL shortener built on tyr, over REST and JSON-RPC.",
+}
+
 // newServer returns the HTTP server of the service: the routes of api and
-// the middleware around them, with the timeouts of a server that faces the
-// internet.
+// its documents, and the middleware around them, with the timeouts of a
+// server that faces the internet.
 func newServer(addr string, api *tyr.API, callers map[string]authz.Caller, logger *slog.Logger) *http.Server {
 	mux := http.NewServeMux()
-	rest.Mount(mux, api, rest.Challenge(`Bearer realm="shortlink"`))
-	mux.Handle("POST /rpc", jsonrpc.Handler(api))
+	// The document tells of the same challenge that REST sends.
+	restOpts := []rest.MountOption{rest.Challenge(`Bearer realm="shortlink"`)}
+	rest.Mount(mux, api, restOpts...)
+	mux.Handle("GET /openapi.json", rest.OpenAPI(api, info, restOpts...))
+	mux.Handle("POST /rpc", jsonrpc.Handler(api, jsonrpc.Discover(info)))
 
 	csrf := http.NewCrossOriginProtection()
 	csrf.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

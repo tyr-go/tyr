@@ -1,0 +1,483 @@
+{
+  "openapi": "3.1.2",
+  "info": {
+    "title": "shortlink",
+    "description": "A URL shortener built on tyr, over REST and JSON-RPC.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/links": {
+      "post": {
+        "tags": [
+          "links"
+        ],
+        "summary": "Create a short link",
+        "description": "Without a code, the link gets a random one of 7 characters.",
+        "operationId": "links.create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateReq"
+              },
+              "examples": {
+                "with a code": {
+                  "value": {
+                    "url": "https://go.dev/doc/",
+                    "code": "go-docs"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "headers": {
+              "Location": {
+                "description": "The path of the link.",
+                "schema": {
+                  "type": "string"
+                },
+                "examples": {
+                  "with a code": {
+                    "value": "/links/go-docs"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Created"
+                },
+                "examples": {
+                  "with a code": {
+                    "value": {
+                      "code": "go-docs",
+                      "url": "https://go.dev/doc/",
+                      "created_at": "2026-09-24T12:00:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Argument",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already Exists",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error of another kind, or a problem of the HTTP request itself.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/links/{code}": {
+      "get": {
+        "tags": [
+          "links"
+        ],
+        "summary": "Get a link",
+        "operationId": "links.get",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "description": "The code of the link.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "examples": {
+              "go-docs": {
+                "value": "go-docs"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Link"
+                },
+                "examples": {
+                  "go-docs": {
+                    "value": {
+                      "code": "go-docs",
+                      "url": "https://go.dev/doc/",
+                      "created_at": "2026-09-24T12:00:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Argument",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error of another kind, or a problem of the HTTP request itself.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "links"
+        ],
+        "summary": "Delete a link",
+        "operationId": "links.delete",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "description": "The code of the link.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Invalid Argument",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge per scheme that the server accepts.",
+                "schema": {
+                  "type": "string"
+                },
+                "examples": {
+                  "1": {
+                    "value": "Bearer realm=\"shortlink\""
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission Denied",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error of another kind, or a problem of the HTTP request itself.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{code}": {
+      "get": {
+        "tags": [
+          "links"
+        ],
+        "summary": "Follow a link",
+        "description": "Over REST, the short link itself: a redirect to where it leads. Over JSON-RPC, where it leads.",
+        "operationId": "links.follow",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "description": "The code of the link.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "examples": {
+              "go-docs": {
+                "value": "go-docs"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Found",
+            "headers": {
+              "Location": {
+                "description": "Where the link leads.",
+                "schema": {
+                  "type": "string"
+                },
+                "examples": {
+                  "go-docs": {
+                    "value": "https://go.dev/doc/"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Argument",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error of another kind, or a problem of the HTTP request itself.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreateReq": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Where the link leads: an http or https URL.",
+            "minLength": 1,
+            "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://[^/?#]"
+          },
+          "code": {
+            "type": "string",
+            "description": "The code of the link, of a-z, 0-9 and '-'. Without it, the link gets a random one.",
+            "minLength": 4,
+            "maxLength": 16
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "Created": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "The code of the link: the path of the short link."
+          },
+          "url": {
+            "type": "string",
+            "description": "Where the link leads."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the link was created."
+          }
+        },
+        "required": [
+          "code",
+          "url",
+          "created_at"
+        ]
+      },
+      "Link": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "The code of the link: the path of the short link."
+          },
+          "url": {
+            "type": "string",
+            "description": "Where the link leads."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the link was created."
+          }
+        },
+        "required": [
+          "code",
+          "url",
+          "created_at"
+        ]
+      },
+      "Problem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri",
+            "description": "The URI of the problem type: one per kind, or about:blank for a problem of the HTTP request itself."
+          },
+          "title": {
+            "type": "string",
+            "description": "The title of the problem type."
+          },
+          "status": {
+            "type": "integer",
+            "description": "The HTTP status."
+          },
+          "detail": {
+            "type": "string",
+            "description": "The message of the error."
+          },
+          "kind": {
+            "type": "string",
+            "description": "The kind of the error. A problem of the HTTP request itself has none.",
+            "enum": [
+              "internal",
+              "invalid_argument",
+              "unauthenticated",
+              "permission_denied",
+              "not_found",
+              "already_exists",
+              "failed_precondition",
+              "resource_exhausted",
+              "deadline_exceeded",
+              "unavailable",
+              "canceled"
+            ]
+          },
+          "errors": {
+            "type": "array",
+            "description": "The fields that failed validation, with invalid_argument.",
+            "items": {
+              "$ref": "#/components/schemas/Violation"
+            }
+          },
+          "details": {
+            "description": "The details of an error of another kind."
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status"
+        ]
+      },
+      "Violation": {
+        "type": "object",
+        "properties": {
+          "pointer": {
+            "type": "string",
+            "description": "A JSON Pointer to the field in the JSON form of the request, such as /code."
+          },
+          "detail": {
+            "type": "string",
+            "description": "What's wrong with the field."
+          }
+        },
+        "required": [
+          "pointer",
+          "detail"
+        ]
+      }
+    }
+  }
+}

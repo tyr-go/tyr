@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -10,6 +14,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -553,4 +559,54 @@ func (l *logs) get() []record {
 // equalRecords reports whether the records a and b are equal.
 func equalRecords(a, b record) bool {
 	return a.msg == b.msg && maps.Equal(a.attrs, b.attrs)
+}
+
+var update = flag.Bool("update", false, "update the golden files in testdata")
+
+// golden compares a document with the golden file testdata/name.json, or
+// writes the file with -update.
+func golden(t *testing.T, name string, got []byte) {
+	t.Helper()
+	path := filepath.Join("testdata", name+".json")
+	got = append(bytes.Clone(got), '\n') // a file ends with a newline, a body doesn't
+	if *update {
+		if err := os.MkdirAll("testdata", 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, got, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("%s:\ngot  %s\nwant %s", path, got, want)
+	}
+}
+
+func TestDocuments(t *testing.T) {
+	// The service describes itself, to anyone: the documents need no token.
+	synctest.Test(t, func(t *testing.T) {
+		s := start(t)
+		resp, body := s.do(t, "GET", "/openapi.json", "")
+		if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "application/json" {
+			t.Fatalf("GET /openapi.json = %d %v, want 200 JSON", resp.StatusCode, resp.Header)
+		}
+		golden(t, "openapi", []byte(body))
+
+		resp, body = s.do(t, "POST", "/rpc", `{"jsonrpc":"2.0","method":"rpc.discover","id":1}`)
+		var res struct {
+			Result jsontext.Value `json:"result"`
+		}
+		if err := json.Unmarshal([]byte(body), &res); err != nil || resp.StatusCode != http.StatusOK || res.Result == nil {
+			t.Fatalf("rpc.discover = %d %s, want a result", resp.StatusCode, body)
+		}
+		if err := res.Result.Indent(jsontext.WithIndent("  ")); err != nil {
+			t.Fatal(err)
+		}
+		golden(t, "openrpc", res.Result)
+	})
 }
