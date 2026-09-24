@@ -2,6 +2,7 @@ package tyr
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -9,6 +10,8 @@ import (
 	"reflect"
 	"runtime/debug"
 	"time"
+
+	"github.com/tyr-go/tyr/internal/plan"
 )
 
 // OpOption configures an operation when it is registered, e.g. with the
@@ -35,7 +38,7 @@ type Operation struct {
 
 // newOperation returns an operation of a that checks requests with
 // validate, their validate tags, if they have any, and passes them to h.
-func newOperation[Req, Res any](a *API, name string, h Handler[Req, Res], validate func(req any) (Violations, error)) *Operation {
+func newOperation[Req, Res any](a *API, name string, h Handler[Req, Res], validate func(req any) (Violations, error), results *plan.EnumCheck) *Operation {
 	_, validates := any((*Req)(nil)).(Validator)
 	nilable := canBeNil(reflect.TypeFor[Res]())
 	return &Operation{
@@ -81,12 +84,39 @@ func newOperation[Req, Res any](a *API, name string, h Handler[Req, Res], valida
 			return res, nil
 		},
 		check: func(res any) error {
-			if _, ok := res.(Res); ok || res == nil && nilable {
-				return nil
+			if _, ok := res.(Res); !ok && (res != nil || !nilable) {
+				return fmt.Errorf("tyr: an interceptor returned %T, want %v", res, reflect.TypeFor[Res]())
 			}
-			return fmt.Errorf("tyr: an interceptor returned %T, want %v", res, reflect.TypeFor[Res]())
+			if res != nil && results != nil {
+				if fs := results.Failures(reflect.ValueOf(res), true); len(fs) > 0 {
+					return errors.New("tyr: " + describeResult(name, fs[0]))
+				}
+			}
+			return nil
 		},
 	}
+}
+
+// describeResult says what's wrong with a result of the operation name that
+// has f: where the value is, and a hint for the zero value of a field,
+// which is most likely a field that may be unset.
+func describeResult(name string, f plan.EnumFailure) string {
+	value := fmt.Sprint(f.Value)
+	if f.Value.CanInterface() {
+		if data, err := json.Marshal(f.Value.Interface()); err == nil {
+			value = string(data)
+		}
+	}
+	var s string
+	if f.Pointer == "" {
+		s = fmt.Sprintf("the result of %s is %s, which isn't a value of %v", name, value, f.Type)
+	} else {
+		s = fmt.Sprintf("the result of %s has %s at %s, which isn't a value of %v", name, value, f.Pointer, f.Type)
+	}
+	if f.Field && f.Value.IsZero() {
+		s += "; if the field is optional, add omitzero or use a pointer"
+	}
+	return s
 }
 
 // canBeNil reports whether nil is a value of type t, such as a pointer.

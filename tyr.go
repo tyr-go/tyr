@@ -61,6 +61,20 @@
 // github.com/tyr-go/tyr/validate/playground has all of go-playground. The
 // violations keep the JSON Pointers and the details of the core.
 //
+// # Enums
+//
+// A named type whose values are a fixed list declares them with a method,
+// EnumValues, as [Enum] has it:
+//
+//	func (Status) EnumValues() []Status { return []Status{StatusTodo, StatusDoing, StatusDone} }
+//
+// [Operation.Call] checks the values of such types wherever they are in a
+// request, after the validate tags, and in a result, whose values must be
+// right as the server writes them: a wrong value of a request fails the
+// call with [KindInvalidArgument], and one of a result with [KindInternal].
+// The documents describe the type once, with its values, for both
+// directions.
+//
 // # For transports
 //
 // A transport serves the operations of an API; handlers and interceptors
@@ -80,6 +94,8 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+
+	"github.com/tyr-go/tyr/internal/plan"
 )
 
 // Handler is the only shape business logic takes: a plain function of a
@@ -287,15 +303,19 @@ func register[Req, Res any](a *API, call string, def Contract[Req, Res], h Handl
 		panic("tyr: " + call + ": nil handler")
 	}
 	t := reflect.TypeFor[Req]()
-	validate, err := a.tagCheck(t)
+	validate, err := a.requestCheck(t)
 	if err != nil {
 		panic("tyr: " + call + ": " + err.Error())
+	}
+	results, err := plan.NewEnumCheck(reflect.TypeFor[Res](), plan.Output)
+	if err != nil {
+		panic(fmt.Sprintf("tyr: %s: %v: %v", call, reflect.TypeFor[Res](), err))
 	}
 	if conflict := conflictingValidate(t); conflict != "" {
 		panic("tyr: " + call + ": " + conflict)
 	}
 
-	op := newOperation(a, def.name, h, validate)
+	op := newOperation(a, def.name, h, validate, results)
 	for _, opt := range slices.Concat(groupOpts, def.opts) {
 		if opt == nil {
 			panic("tyr: " + call + ": nil option") // of a group: Define checked its own

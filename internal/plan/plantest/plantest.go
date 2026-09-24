@@ -536,3 +536,124 @@ func Checks() []Check {
 		},
 	}
 }
+
+// Status is an enum of strings, as tyr.Enum has them.
+type Status string
+
+// The statuses.
+const (
+	StatusTodo  Status = "todo"
+	StatusDoing Status = "doing"
+	StatusDone  Status = "done"
+)
+
+// EnumValues returns the statuses.
+func (Status) EnumValues() []Status { return []Status{StatusTodo, StatusDoing, StatusDone} }
+
+// Priority is an enum of numbers, whose zero value isn't one of them.
+type Priority int
+
+// EnumValues returns the priorities.
+func (Priority) EnumValues() []Priority { return []Priority{1, 2, 3} }
+
+// Size is an enum of ints that JSON carries as their names, by methods of
+// text, and whose zero value is one of them.
+type Size int
+
+// sizeNames are the names of the sizes, by their values.
+var sizeNames = []string{"small", "medium", "large"}
+
+// EnumValues returns the sizes.
+func (Size) EnumValues() []Size { return []Size{0, 1, 2} }
+
+// MarshalText returns the name of s, or its number if it has none.
+func (s Size) MarshalText() ([]byte, error) {
+	if s < 0 || int(s) >= len(sizeNames) {
+		return fmt.Appendf(nil, "size-%d", int(s)), nil
+	}
+	return []byte(sizeNames[s]), nil
+}
+
+// UnmarshalText sets s to the size that text names.
+func (s *Size) UnmarshalText(text []byte) error {
+	i := slices.Index(sizeNames, string(text))
+	if i < 0 {
+		return fmt.Errorf("unknown size %q", text)
+	}
+	*s = Size(i)
+	return nil
+}
+
+// EnumNested is nested in Enums.
+type EnumNested struct {
+	Status Status `json:"status"`
+}
+
+// Enums has values of enum types in every place that the check of enums
+// walks: fields, pointers, elements of slices and arrays, keys and values
+// of maps, and nested structs.
+type Enums struct {
+	Status   Status          `json:"status"`
+	Ptr      *Status         `json:"ptr"`
+	Priority Priority        `json:"priority"`
+	Size     Size            `json:"size"`
+	List     []Status        `json:"list"`
+	Pair     [2]Priority     `json:"pair"`
+	ByStatus map[Status]int  `json:"by_status"`
+	Sizes    map[string]Size `json:"sizes"`
+	Nested   EnumNested      `json:"nested"`
+	Items    []EnumNested    `json:"items"`
+	Required Status          `json:"required" validate:"required"`
+}
+
+// EnumChecks returns values of Enums and the violations of their enums that
+// the core reports for a request: a field of the zero value of its type
+// isn't set, and isn't checked. The validate tags add theirs.
+func EnumChecks() []Check {
+	return []Check{
+		{
+			Name: "valid enums",
+			Value: Enums{
+				Status: StatusTodo, Ptr: new(StatusDone), Priority: 3, Size: 2,
+				List: []Status{StatusDoing}, Pair: [2]Priority{1, 2},
+				ByStatus: map[Status]int{StatusDone: 4}, Sizes: map[string]Size{"a": 0},
+				Nested: EnumNested{StatusDoing}, Items: []EnumNested{{StatusTodo}}, Required: StatusDone,
+			},
+		},
+		{
+			Name: "invalid enums",
+			Value: Enums{
+				Status: "archived", Ptr: new(Status("")), Priority: 7,
+				List: []Status{StatusTodo, "later"}, Pair: [2]Priority{1, 0},
+				ByStatus: map[Status]int{"archived": 1, StatusDone: 2},
+				Nested:   EnumNested{"lost"}, Items: []EnumNested{{StatusDone}, {"odd"}}, Required: "gone",
+			},
+			Want: []Violation{
+				{"/status", "must be one of: todo, doing, done"},
+				{"/ptr", "must be one of: todo, doing, done"},
+				{"/priority", "must be one of: 1, 2, 3"},
+				{"/list/1", "must be one of: todo, doing, done"},
+				{"/pair/1", "must be one of: 1, 2, 3"},
+				{"/by_status/archived", "must be one of: todo, doing, done"},
+				{"/nested/status", "must be one of: todo, doing, done"},
+				{"/items/1/status", "must be one of: todo, doing, done"},
+				{"/required", "must be one of: todo, doing, done"},
+			},
+		},
+		{
+			// A value of a type that parses itself, which no JSON makes:
+			// UnmarshalText rejects what isn't one of the values.
+			Name:  "invalid sizes",
+			Value: Enums{Size: 5, Sizes: map[string]Size{"b": 9}, Required: StatusDone},
+			Want: []Violation{
+				{"/size", "must be one of: small, medium, large"},
+				{"/sizes/b", "must be one of: small, medium, large"},
+			},
+		},
+		{
+			// Zero fields aren't set; the tag of Required demands it.
+			Name:  "zero enums",
+			Value: Enums{},
+		},
+	}
+}

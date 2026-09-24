@@ -41,8 +41,9 @@ func (d Direction) String() string {
 // Schemas builds the JSON Schemas of the values of Go types, as
 // encoding/json/v2 writes and reads them: the members of a struct are
 // those of members, the plan that binding and validation follow too.
-// A named struct type becomes a definition per direction, and schemas
-// reference it; see Defs.
+// A named struct type becomes a definition per direction, and an enum type
+// one definition for both, as its values are the same both ways; schemas
+// reference them. See Defs.
 type Schemas struct {
 	prefix  string // of the references to definitions
 	defs    map[defKey]*jsonschema.Def
@@ -135,6 +136,11 @@ func (s *Schemas) value(t reflect.Type, dir Direction, quoted bool, path string)
 	case reflect.Interface:
 		return &jsonschema.Schema{}, nil // any value, null too
 	}
+	if e, err := enumOf(t); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	} else if e != nil {
+		return s.enumRef(e), nil
+	}
 	switch t {
 	case reflect.TypeFor[time.Time]():
 		return &jsonschema.Schema{Type: stringType, Format: "date-time"}, nil
@@ -205,11 +211,22 @@ func (s *Schemas) value(t reflect.Type, dir Direction, quoted bool, path string)
 		if kk := t.Key().Kind(); kk != reflect.String && !isNumberKind(kk) && methodsOf(t.Key(), dir) == noMethods {
 			return nil, fmt.Errorf("%s: json/v2 can't write the keys of %v as the names of members", path, t)
 		}
+		keys, err := enumOf(t.Key())
+		switch {
+		case err != nil:
+			return nil, fmt.Errorf("%s: %w", path, err)
+		case keys != nil && keys.schema[0] != "string":
+			return nil, fmt.Errorf("%s: the keys of %v are of %v, an enum of numbers, which can't name the members of a JSON object", path, t, t.Key())
+		}
 		values, err := s.value(t.Elem(), dir, false, path+"[]")
 		if err != nil {
 			return nil, err
 		}
-		return &jsonschema.Schema{Type: jsonschema.Types{"object"}, AdditionalProperties: values}, nil
+		sch := &jsonschema.Schema{Type: jsonschema.Types{"object"}, AdditionalProperties: values}
+		if keys != nil {
+			sch.PropertyNames = s.enumRef(keys)
+		}
+		return sch, nil
 	case k == reflect.Struct && t.Name() == "":
 		return s.object(t, dir, path)
 	case k == reflect.Struct:
@@ -254,6 +271,21 @@ func methodsOf(t reflect.Type, dir Direction) methods {
 		return textMethods
 	}
 	return noMethods
+}
+
+// enumRef returns a reference to the definition of the enum e, and makes
+// the definition the first time: one for both directions, under the key of
+// Output, which Defs names without a suffix, as the values are the same
+// both ways.
+func (s *Schemas) enumRef(e *enum) *jsonschema.Schema {
+	key := defKey{e.typ, Output}
+	d, ok := s.defs[key]
+	if !ok {
+		d = &jsonschema.Def{Schema: &jsonschema.Schema{Type: e.schema, Enum: e.json}}
+		s.defs[key] = d
+		s.order = append(s.order, key)
+	}
+	return &jsonschema.Schema{Ref: d}
 }
 
 // ref returns a reference to the definition of the named struct type t in
@@ -424,7 +456,8 @@ func withRules(sch *jsonschema.Schema, rules []rule, f form) *jsonschema.Schema 
 // and its direction only, so that adding a schema renames none and a
 // change of a validate tag renames nothing: the base name, which Name or
 // the method SchemaName of the type gives, or else the name of the type,
-// and for Input the suffix Input. Defs fails on a base name that isn't
+// and for Input the suffix Input, which the one definition of an enum type
+// goes without. Defs fails on a base name that isn't
 // letters, digits, '.', '-' and '_', and on two definitions of one name.
 // Build every schema before Defs: the references get their names from it.
 func (s *Schemas) Defs() ([]*jsonschema.Def, error) {

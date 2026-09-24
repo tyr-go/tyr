@@ -44,6 +44,7 @@ type Schema struct {
 	Properties           Properties `json:"properties,omitzero"`
 	Required             []string   `json:"required,omitzero"`
 	AdditionalProperties *Schema    `json:"additionalProperties,omitzero"`
+	PropertyNames        *Schema    `json:"propertyNames,omitzero"`
 	MinProperties        *int       `json:"minProperties,omitzero"`
 	MaxProperties        *int       `json:"maxProperties,omitzero"`
 

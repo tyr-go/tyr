@@ -348,6 +348,28 @@ func TestSchemaNames(t *testing.T) {
 	}
 }
 
+func TestSchemaNamesOfEnums(t *testing.T) {
+	// An enum type has one definition for both directions, without Input,
+	// as its values are the same both ways.
+	names, refs, err := both(NewSchemas("#/components/schemas/"),
+		[]reflect.Type{reflect.TypeFor[plantest.Enums]()}, []reflect.Type{reflect.TypeFor[plantest.Enums]()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"EnumNested", "EnumNestedInput", "Enums", "EnumsInput", "Priority", "Size", "Status"}
+	if !slices.Equal(names, want) {
+		t.Errorf("Defs() names:\n%q\nwant:\n%q", names, want)
+	}
+	for key, want := range map[string]string{
+		"plantest.Enums/output": "#/components/schemas/Enums",
+		"plantest.Enums/input":  "#/components/schemas/EnumsInput",
+	} {
+		if refs[key] != want {
+			t.Errorf("reference of %s = %q, want %q", key, refs[key], want)
+		}
+	}
+}
+
 func TestSchemaNamesAreStable(t *testing.T) {
 	// More types around them rename none of the definitions: those of node
 	// and opts have the same names alone and among others, which the old
@@ -482,7 +504,7 @@ type embedded struct {
 }
 
 func TestSchemaGolden(t *testing.T) {
-	for _, typ := range []reflect.Type{reflect.TypeFor[sample](), reflect.TypeFor[embedded](), reflect.TypeFor[node]()} {
+	for _, typ := range []reflect.Type{reflect.TypeFor[sample](), reflect.TypeFor[embedded](), reflect.TypeFor[node](), reflect.TypeFor[plantest.Enums]()} {
 		for _, dir := range []Direction{Input, Output} {
 			s := NewSchemas("#/$defs/")
 			sch, err := s.Of(typ, dir)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/tyr-go/tyr/internal/plan"
@@ -34,6 +35,41 @@ import (
 // Validate.
 type Validator interface {
 	Validate() error
+}
+
+// requestCheck returns the check of requests of the struct type t: their
+// validate tags, with the validator of the API, and then their values of
+// enums (see Enum), or nil if they have nothing to check. The check gets a
+// pointer to a request; an error means that the validator reported a rule
+// of a value that t doesn't have.
+func (a *API) requestCheck(t reflect.Type) (func(req any) (Violations, error), error) {
+	tags, err := a.tagCheck(t)
+	if err != nil {
+		return nil, err
+	}
+	enums, err := plan.NewEnumCheck(t, plan.Input)
+	if err != nil {
+		return nil, fmt.Errorf("%v: %w", t, err)
+	}
+	if enums == nil {
+		return tags, nil
+	}
+	return func(req any) (Violations, error) {
+		var vs Violations
+		if tags != nil {
+			var err error
+			if vs, err = tags(req); err != nil {
+				return nil, err
+			}
+		}
+		for _, f := range enums.Failures(reflect.ValueOf(req).Elem(), false) {
+			// A field that fails a tag adds no second violation.
+			if !slices.ContainsFunc(vs, func(v Violation) bool { return v.Pointer == f.Pointer }) {
+				vs = append(vs, Violation{Pointer: f.Pointer, Detail: f.Detail})
+			}
+		}
+		return vs, nil
+	}, nil
 }
 
 // violationsOf returns the violations of validate tags as Violations.

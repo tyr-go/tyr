@@ -17,12 +17,18 @@ import (
 	"github.com/tyr-go/tyr/jsonrpc"
 )
 
+// docVisibility is an enum of the API that TestDiscover documents.
+type docVisibility string
+
+func (docVisibility) EnumValues() []docVisibility { return []docVisibility{"public", "private"} }
+
 // The types of the API that TestDiscover documents.
 type (
 	docLink struct {
-		Code      string    `json:"code" doc:"The code of the link."`
-		URL       string    `json:"url"`
-		CreatedAt time.Time `json:"created_at"`
+		Code       string        `json:"code" doc:"The code of the link."`
+		URL        string        `json:"url"`
+		CreatedAt  time.Time     `json:"created_at"`
+		Visibility docVisibility `json:"visibility" doc:"Who may follow the link."`
 	}
 	docCreateReq struct {
 		URL  string `json:"url" validate:"required,http_url" doc:"Where the link leads."`
@@ -53,7 +59,7 @@ func docAPI() *tyr.API {
 		tyr.Errors(tyr.KindAlreadyExists, tyr.KindFailedPrecondition),
 	).Example("with a code",
 		docCreateReq{URL: "https://go.dev", Code: "go-home"},
-		docLink{Code: "go-home", URL: "https://go.dev", CreatedAt: created},
+		docLink{Code: "go-home", URL: "https://go.dev", CreatedAt: created, Visibility: "public"},
 	), func(ctx context.Context, req docCreateReq) (docLink, error) { return docLink{}, nil })
 	api.Handle("links.get", func(ctx context.Context, req docGetReq) (*docLink, error) { return nil, nil },
 		tyr.Tags("links"), tyr.Errors(tyr.KindNotFound))

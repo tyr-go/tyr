@@ -74,7 +74,8 @@
             "value": {
               "code": "go-home",
               "url": "https://go.dev",
-              "created_at": "2026-09-24T00:00:00Z"
+              "created_at": "2026-09-24T00:00:00Z",
+              "visibility": "public"
             }
           }
         }
@@ -283,12 +284,21 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "visibility": {
+            "description": "Who may follow the link.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/docVisibility"
+              }
+            ]
           }
         },
         "required": [
           "code",
           "url",
-          "created_at"
+          "created_at",
+          "visibility"
         ]
       },
       "docLinkInput": {
@@ -304,6 +314,14 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "visibility": {
+            "description": "Who may follow the link.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/docVisibility"
+              }
+            ]
           }
         }
       },
@@ -316,6 +334,13 @@
         },
         "required": [
           "purged"
+        ]
+      },
+      "docVisibility": {
+        "type": "string",
+        "enum": [
+          "public",
+          "private"
         ]
       }
     }

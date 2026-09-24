@@ -500,6 +500,42 @@ func BenchmarkCall(b *testing.B) {
 			}
 		})
 	}
+	// The checks of enums: a request of one and a result of ten, against
+	// the same shapes of strings.
+	type (
+		plainReq  struct{ Status string }
+		plainTask struct {
+			Title  string `json:"title"`
+			Status string `json:"status"`
+		}
+		enumReq struct{ Status state }
+	)
+	plainTasks, enumTasks := make([]plainTask, 10), make([]task, 10)
+	for i := range 10 {
+		plainTasks[i], enumTasks[i] = plainTask{"Task", "done"}, task{"Task", stateDone}
+	}
+	b.Run("strings", func(b *testing.B) {
+		api := tyr.New()
+		op := api.Handle("tasks.list", func(ctx context.Context, req plainReq) ([]plainTask, error) { return plainTasks, nil })
+		api.Seal()
+		ctx := b.Context()
+		decode := func(dst any) error { *dst.(*plainReq) = plainReq{Status: "done"}; return nil }
+		b.ReportAllocs()
+		for b.Loop() {
+			_, _ = op.Call(ctx, decode)
+		}
+	})
+	b.Run("enums", func(b *testing.B) {
+		api := tyr.New()
+		op := api.Handle("tasks.list", func(ctx context.Context, req enumReq) ([]task, error) { return enumTasks, nil })
+		api.Seal()
+		ctx := b.Context()
+		decode := func(dst any) error { *dst.(*enumReq) = enumReq{Status: stateDone}; return nil }
+		b.ReportAllocs()
+		for b.Loop() {
+			_, _ = op.Call(ctx, decode)
+		}
+	})
 	// The context of a timeout and its timer.
 	b.Run("timeout", func(b *testing.B) {
 		api := tyr.New()

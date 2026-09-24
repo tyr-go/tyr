@@ -132,12 +132,14 @@ func objectOf(t reflect.Type) (ms []member, fallback reflect.Type, err error) {
 
 // jsonTag is what the json tag of a field says.
 type jsonTag struct {
-	name    string // the JSON name, which is the Go name if the tag gives none
-	tagged  bool   // the tag gives the name
-	embed   bool   // the embed option
-	ignored bool   // json:"-": the field is left out
-	omit    bool   // the omitzero or the omitempty option
-	quoted  bool   // the string option
+	name      string // the JSON name, which is the Go name if the tag gives none
+	tagged    bool   // the tag gives the name
+	embed     bool   // the embed option
+	ignored   bool   // json:"-": the field is left out
+	omit      bool   // the omitzero or the omitempty option
+	omitzero  bool   // the omitzero option
+	omitempty bool   // the omitempty option
+	quoted    bool   // the string option
 }
 
 // parseJSONTag returns what the json tag of sf says.
@@ -158,8 +160,10 @@ func parseJSONTag(sf reflect.StructField) jsonTag {
 		switch opt {
 		case "embed":
 			t.embed = true
-		case "omitzero", "omitempty":
-			t.omit = true
+		case "omitzero":
+			t.omit, t.omitzero = true, true
+		case "omitempty":
+			t.omit, t.omitempty = true, true
 		case "string":
 			t.quoted = true
 		}

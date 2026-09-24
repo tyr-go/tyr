@@ -17,12 +17,18 @@ import (
 	"github.com/tyr-go/tyr/rest"
 )
 
+// docVisibility is an enum of the API that TestOpenAPI documents.
+type docVisibility string
+
+func (docVisibility) EnumValues() []docVisibility { return []docVisibility{"public", "private"} }
+
 // The types of the API that TestOpenAPI documents.
 type (
 	docLink struct {
-		Code      string    `json:"code" doc:"The code of the link."`
-		URL       string    `json:"url"`
-		CreatedAt time.Time `json:"created_at"`
+		Code       string        `json:"code" doc:"The code of the link."`
+		URL        string        `json:"url"`
+		CreatedAt  time.Time     `json:"created_at"`
+		Visibility docVisibility `json:"visibility" doc:"Who may follow the link."`
 	}
 	docCreated struct {
 		docLink
@@ -41,6 +47,8 @@ type (
 		Limit int       `json:"limit" query:"limit" validate:"omitempty,min=1,max=100" doc:"How many links to return."`
 		After *string   `json:"after" query:"after"`
 		Since time.Time `json:"since" header:"If-Modified-Since"`
+		// Of an enum, whose parameter references its definition.
+		Visibility docVisibility `json:"visibility" query:"visibility" doc:"Only the links of the visibility."`
 	}
 	docFollowRes struct {
 		URL string `json:"url" header:"Location"`
@@ -69,12 +77,12 @@ func docAPI() *tyr.API {
 		tyr.Errors(tyr.KindAlreadyExists, tyr.KindFailedPrecondition),
 	).Example("with a code",
 		docCreateReq{URL: "https://go.dev", Code: "go-home", Tenant: "acme"},
-		docCreated{Code: "go-home", URL: "https://go.dev", CreatedAt: created, Location: "/links/go-home"},
+		docCreated{docLink: docLink{Code: "go-home", URL: "https://go.dev", CreatedAt: created, Visibility: "public"}, Location: "/links/go-home"},
 	), func(ctx context.Context, req docCreateReq) (docCreated, error) { return docCreated{}, nil })
 
 	api.Implement(tyr.Define[docGetReq, *docLink]("links.get",
 		rest.Route("GET /links/{code}"), tyr.Tags("links"), tyr.Errors(tyr.KindNotFound),
-	).Example("go-home", docGetReq{Code: "go-home"}, &docLink{Code: "go-home", URL: "https://go.dev", CreatedAt: created}),
+	).Example("go-home", docGetReq{Code: "go-home"}, &docLink{Code: "go-home", URL: "https://go.dev", CreatedAt: created, Visibility: "public"}),
 		func(ctx context.Context, req docGetReq) (*docLink, error) { return nil, nil })
 	api.Handle("links.list", func(ctx context.Context, req docListReq) ([]docLink, error) { return nil, nil },
 		rest.Route("GET /links"), tyr.Tags("links"))
@@ -170,10 +178,10 @@ func TestOpenAPIStableNames(t *testing.T) {
 	}
 
 	few, many := names(build(false)), names(build(true))
-	if want := []string{"Problem", "Violation", "docLink"}; !slices.Equal(few, want) {
+	if want := []string{"Problem", "Violation", "docLink", "docVisibility"}; !slices.Equal(few, want) {
 		t.Errorf("schemas of one operation = %q, want %q", few, want)
 	}
-	want := []string{"Problem", "Violation", "docImported", "docLink", "docLinkInput", "stableAddressInput", "stableTag", "stableTagInput"}
+	want := []string{"Problem", "Violation", "docImported", "docLink", "docLinkInput", "docVisibility", "stableAddressInput", "stableTag", "stableTagInput"}
 	if !slices.Equal(many, want) {
 		t.Errorf("schemas of more operations = %q, want %q", many, want)
 	}

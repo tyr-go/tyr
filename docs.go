@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 )
 
 // Doc is the documentation of an operation, for the documents that
@@ -46,7 +47,9 @@ type Info struct {
 // Without the method, a schema is named after its Go type, such as Link and
 // LinkInput, and generic types after their type arguments too, such as
 // Page_Link. Only a struct type that JSON writes as an object has named
-// schemas.
+// schemas, and an enum type (see [Enum]), whose one schema serves both
+// directions, as its values are the same both ways: Status, never
+// StatusInput.
 //
 // A name depends on its type and direction only, so that adding an
 // operation or changing a validate tag renames nothing. Two types of one
@@ -202,6 +205,9 @@ func checkExamples[Req any](op *Operation, validate func(req any) (Violations, e
 		}
 		if _, err := json.Marshal(ex.Res); err != nil {
 			return fmt.Errorf("example %q: encoding the result: %w", ex.Name, err)
+		}
+		if err := op.check(ex.Res); err != nil {
+			return fmt.Errorf("example %q: %s", ex.Name, strings.TrimPrefix(err.Error(), "tyr: "))
 		}
 	}
 	return nil

@@ -1,0 +1,120 @@
+{
+  "schema": {
+    "$ref": "#/$defs/Enums"
+  },
+  "$defs": {
+    "EnumNested": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/Status"
+        }
+      },
+      "required": [
+        "status"
+      ]
+    },
+    "Enums": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/Status"
+        },
+        "ptr": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Status"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "priority": {
+          "$ref": "#/$defs/Priority"
+        },
+        "size": {
+          "$ref": "#/$defs/Size"
+        },
+        "list": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Status"
+          }
+        },
+        "pair": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Priority"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "by_status": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/Status"
+          }
+        },
+        "sizes": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Size"
+          }
+        },
+        "nested": {
+          "$ref": "#/$defs/EnumNested"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EnumNested"
+          }
+        },
+        "required": {
+          "$ref": "#/$defs/Status"
+        }
+      },
+      "required": [
+        "status",
+        "ptr",
+        "priority",
+        "size",
+        "list",
+        "pair",
+        "by_status",
+        "sizes",
+        "nested",
+        "items",
+        "required"
+      ]
+    },
+    "Priority": {
+      "type": "integer",
+      "enum": [
+        1,
+        2,
+        3
+      ]
+    },
+    "Size": {
+      "type": "string",
+      "enum": [
+        "small",
+        "medium",
+        "large"
+      ]
+    },
+    "Status": {
+      "type": "string",
+      "enum": [
+        "todo",
+        "doing",
+        "done"
+      ]
+    }
+  }
+}

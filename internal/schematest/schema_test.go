@@ -104,8 +104,22 @@ func failures(t *testing.T, sch *jsonschema.Schema, data []byte) []string {
 		t.Fatalf("Validate() error = %v", err)
 	}
 	found := make(map[string]bool)
-	var walk func(e *jsonschema.ValidationError)
-	walk = func(e *jsonschema.ValidationError) {
+	var walk func(e *jsonschema.ValidationError, parent []string)
+	walk = func(e *jsonschema.ValidationError, parent []string) {
+		if k, ok := e.ErrorKind.(*kind.PropertyNames); ok {
+			// The failure is the member of the name; its causes are of the
+			// name, at no location. And v6.0.3 gives the error the live
+			// location of its validator, which later errors overwrite, so
+			// the location is the object of the parent, and the member of
+			// it that the schema of the names is at: properties/<name>.
+			at := pointer(parent)
+			if i := strings.LastIndex(e.SchemaURL, "/properties/"); i >= 0 {
+				name, _, _ := strings.Cut(e.SchemaURL[i+len("/properties/"):], "/")
+				at += pointer([]string{name})
+			}
+			found[at+pointer([]string{k.Property})] = true
+			return
+		}
 		if len(e.Causes) == 0 {
 			at := pointer(e.InstanceLocation)
 			if r, ok := e.ErrorKind.(*kind.Required); ok {
@@ -117,10 +131,10 @@ func failures(t *testing.T, sch *jsonschema.Schema, data []byte) []string {
 			}
 		}
 		for _, c := range e.Causes {
-			walk(c)
+			walk(c, e.InstanceLocation)
 		}
 	}
-	walk(ve)
+	walk(ve, nil)
 	var out []string
 	for p := range found {
 		out = append(out, p)
@@ -210,6 +224,12 @@ func fill(v reflect.Value, n *int, depth int) {
 		v.Set(reflect.ValueOf(netip.MustParseAddr("192.0.2.1")))
 		return
 	}
+	if m, ok := reflect.PointerTo(v.Type()).MethodByName("EnumValues"); ok {
+		// An enum takes one of its values, the last, which isn't zero.
+		values := m.Func.Call([]reflect.Value{reflect.New(v.Type())})[0]
+		v.Set(values.Index(values.Len() - 1))
+		return
+	}
 	*n++
 	switch v.Kind() {
 	case reflect.Pointer:
@@ -276,14 +296,14 @@ func outputs() []any {
 	for _, c := range plantest.Checks() {
 		types = append(types, reflect.TypeOf(c.Value))
 	}
-	types = append(types, reflect.TypeFor[everything](), reflect.TypeFor[tree]())
+	types = append(types, reflect.TypeFor[everything](), reflect.TypeFor[tree](), reflect.TypeFor[plantest.Enums]())
 	var values []any
 	for _, typ := range types {
 		zero, filled := reflect.New(typ).Elem(), reflect.New(typ).Elem()
 		fill(filled, new(int), 4)
 		values = append(values, zero.Interface(), filled.Interface())
 	}
-	for _, c := range plantest.Checks() {
+	for _, c := range slices.Concat(plantest.Checks(), plantest.EnumChecks()) {
 		values = append(values, c.Value)
 	}
 	return values
@@ -297,6 +317,11 @@ func TestWrite(t *testing.T) {
 		data, err := json.Marshal(v)
 		if err != nil {
 			continue // NaN, ±Inf or a time.Duration, which JSON can't carry
+		}
+		if check, err := plan.NewEnumCheck(typ, plan.Output); err != nil {
+			t.Fatal(err)
+		} else if check != nil && !check.OK(reflect.ValueOf(v)) {
+			continue // a value of an enum that isn't one: the server doesn't write it
 		}
 		if _, ok := compiled[typ]; !ok {
 			for _, d := range dialects {
@@ -339,7 +364,21 @@ var (
 			"/cents": "min of an int of JSON",
 		},
 	}
+	// undecodable are checks whose JSON doesn't decode, as check name → why.
+	undecodable = map[string]string{
+		"invalid sizes": "Size parses its names and rejects the others, before the core checks the enum",
+	}
 	stricter = map[string]map[string]string{
+		"zero enums": {
+			// A field of the zero value of its type isn't set, for the
+			// core, and isn't checked; the schema of an enum lists its
+			// values only, which a client sends.
+			"/status":        "an enum of strings",
+			"/priority":      "an enum of numbers",
+			"/pair/0":        "an element of an array of the zero value",
+			"/pair/1":        "an element of an array of the zero value",
+			"/nested/status": "an enum of a nested struct",
+		},
 		"nesting": {
 			// Without dive, the core doesn't check the elements of a slice,
 			// and the schema of an element is that of its type.
@@ -352,8 +391,9 @@ func TestRead(t *testing.T) {
 	// The input schema of a type rejects the members of a request that the
 	// core rejects, at the member or within it, but for the lists above.
 	// What the core reads is the JSON of the value, decoded as a request
-	// is, so that nil slices are empty ones, as json/v2 writes them.
-	for _, c := range plantest.Checks() {
+	// is, so that nil slices are empty ones, as json/v2 writes them. The
+	// core checks the validate tags and then the values of enums.
+	for _, c := range slices.Concat(plantest.Checks(), plantest.EnumChecks()) {
 		t.Run(c.Name, func(t *testing.T) {
 			typ := reflect.TypeOf(c.Value)
 			data, err := json.Marshal(c.Value)
@@ -362,6 +402,9 @@ func TestRead(t *testing.T) {
 			}
 			req := reflect.New(typ)
 			if err := json.Unmarshal(data, req.Interface()); err != nil {
+				if why := undecodable[c.Name]; why != "" {
+					t.Skipf("%s: %v", why, err)
+				}
 				t.Fatalf("json.Unmarshal(%s) error = %v", data, err)
 			}
 			validation, err := plan.NewValidation(typ)
@@ -369,8 +412,21 @@ func TestRead(t *testing.T) {
 				t.Fatal(err)
 			}
 			var core []string
-			for _, v := range validation.Validate(req.Elem()) {
-				core = append(core, v.Pointer)
+			if validation != nil {
+				for _, v := range validation.Validate(req.Elem()) {
+					core = append(core, v.Pointer)
+				}
+			}
+			enums, err := plan.NewEnumCheck(typ, plan.Input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if enums != nil {
+				for _, f := range enums.Failures(req.Elem(), false) {
+					if !slices.Contains(core, f.Pointer) {
+						core = append(core, f.Pointer)
+					}
+				}
 			}
 			for _, d := range dialects {
 				schema := deepest(failures(t, compile(t, typ, plan.Input, d), data))

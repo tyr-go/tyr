@@ -157,7 +157,8 @@ func MaxBodyBytes(n int64) HandlerOption {
 // Schema Draft 7 and say what the server reads and writes, as json/v2 does;
 // the validate tags of requests add their constraints, and doc tags
 // describe fields. The schemas of struct types are in components, named
-// after their types, such as Link for results and LinkInput for requests;
+// after their types, such as Link for results and LinkInput for requests,
+// and those of enums (see [tyr.Enum]) too, one for both, such as Status;
 // see [tyr.SchemaNamer].
 //
 // The schemas fall short of the server in two ways. The schema of an
