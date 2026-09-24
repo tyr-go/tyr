@@ -173,18 +173,18 @@ func ExampleDiscover() {
 	}
 	fmt.Println("OpenRPC", res.Result.OpenRPC)
 	for _, m := range res.Result.Methods {
-		fmt.Println(m.Name, "-", m.Summary)
+		fmt.Printf("method %s: %s\n", m.Name, m.Summary)
 		for _, p := range m.Params {
-			fmt.Println("  param", p.Name, "required:", p.Required)
+			fmt.Printf("param %s, required: %v\n", p.Name, p.Required)
 		}
 		for _, e := range m.Errors {
-			fmt.Println("  error", e.Code, e.Message)
+			fmt.Printf("error %d: %s\n", e.Code, e.Message)
 		}
 	}
 	// Output:
 	// OpenRPC 1.4.1
-	// links.get - Get a link
-	//   param code required: true
-	//   error -32602 invalid argument
-	//   error 404 not found
+	// method links.get: Get a link
+	// param code, required: true
+	// error -32602: invalid argument
+	// error 404: not found
 }

@@ -60,6 +60,7 @@ tyr decodes the request, from the JSON body and then the fields tagged `path`, `
 - Handlers are plain functions, [`func(ctx, Req) (Res, error)`](https://pkg.go.dev/github.com/tyr-go/tyr#Handler), with no HTTP types
 - One operation over [REST](https://pkg.go.dev/github.com/tyr-go/tyr/rest) and [JSON-RPC 2.0](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc), by its name
 - [Contracts](https://pkg.go.dev/github.com/tyr-go/tyr#Define) that the server and a typed [JSON-RPC client](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Client) share, checked by the compiler, without codegen, and an [in-process client](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#InProcess) for tests
+- [OpenAPI 3.1](https://pkg.go.dev/github.com/tyr-go/tyr/rest#OpenAPI) and [OpenRPC](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Discover) documents made of the same types and contracts: JSON Schemas of what the server reads and writes, with the constraints of the `validate` tags, and the summaries, errors and examples of the contracts
 - [Binding](https://pkg.go.dev/github.com/tyr-go/tyr/rest#hdr-Requests) from the JSON body, the path, the query and headers
 - [Validation](https://pkg.go.dev/github.com/tyr-go/tyr#hdr-Validation) by tags in the syntax of go-playground/validator and by a `Validate` method
 - [Errors of kinds](https://pkg.go.dev/github.com/tyr-go/tyr#Kind): RFC 9457 problems over REST, error codes over JSON-RPC
@@ -95,7 +96,8 @@ Týr, the Norse god of law and oaths, put his hand in Fenrir's jaws as the pledg
 - Request and response only. Streaming, server-sent events and WebSockets go to plain handlers too, and consumers of event streams are out of scope.
 - JSON-RPC takes params by name only.
 - Validation implements a subset of the tags of go-playground/validator, with the semantics of v10.30.5: `required`, `omitempty`, `min`, `max`, `len`, `gt`, `gte`, `lt`, `lte`, `oneof`, `email`, `url`, `http_url` and `uuid`, without `dive` and `|`. An unknown rule panics at startup. Rules between fields go in a `Validate` method; an adapter for all of go-playground is planned.
-- The typed client speaks JSON-RPC and sends one call per request; a REST client is planned. No OpenAPI or OpenRPC yet.
+- The typed client speaks JSON-RPC and sends one call per request; a REST client is planned.
+- The schemas of requests say what the `validate` tags demand as far as JSON Schema can: `email` and `url` become formats, which the rules of go-playground don't match exactly, and a `Validate` method doesn't show. The schemas of results have no constraints: the server doesn't check what it writes.
 - Authorization belongs in interceptors, not in the middleware of a route: over JSON-RPC, an operation has no route of its own.
 
 ## Examples
@@ -279,6 +281,42 @@ if e, ok := errors.AsType[*tyr.Error](err); ok {
 
 Any other error of `Call`, such as a failed connection or a 503 of a load balancer, isn't a `*tyr.Error`: the documentation of [`Client`](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Client) shows how to report those as `unavailable`.
 
+### [Document an API](https://pkg.go.dev/github.com/tyr-go/tyr/rest#example-OpenAPI)
+
+The contract documents its operation too, so the code and the documents share one source: `Summary`, `Description`, `Tags`, `Errors` and examples by `Op.Example`, whose types the compiler checks; `doc` tags describe fields. REST serves an OpenAPI 3.1 document of the operations it serves, with the same options as `Mount`:
+
+<!-- Output: rest.ExampleOpenAPI -->
+```go
+type GetLinkReq struct {
+	Code string `json:"code" path:"code" validate:"required" doc:"The code of the link."`
+}
+
+getLink := tyr.Define[GetLinkReq, Link]("links.get", rest.Route("GET /links/{code}"),
+	tyr.Summary("Get a link"), tyr.Errors(tyr.KindNotFound))
+api.Implement(getLink, get)
+
+mux.Handle("GET /openapi.json", rest.OpenAPI(api, tyr.Info{Title: "links", Version: "1.0.0"}))
+
+// GET /openapi.json: its method, path, operationId, summary and responses
+// => get /links/{code} links.get Get a link [200 400 404 default]
+```
+
+Every operation may fail with `invalid_argument`, so 400 is always there; `default` stands for the rest. JSON-RPC answers `rpc.discover` with the OpenRPC document of the same operations:
+
+<!-- Output: jsonrpc.ExampleDiscover -->
+```go
+mux.Handle("POST /rpc", jsonrpc.Handler(api, jsonrpc.Discover(tyr.Info{Title: "links", Version: "1.0.0"})))
+
+// POST /rpc {"jsonrpc": "2.0", "method": "rpc.discover", "id": 1}
+// => OpenRPC 1.4.1
+// => method links.get: Get a link
+// => param code, required: true
+// => error -32602: invalid argument
+// => error 404: not found
+```
+
+The schemas say what the server reads and writes, as `encoding/json/v2` does. A member of a request is required if the server rejects the request without it, and a type whose schemas of requests and results differ gets two, such as `Link` and `LinkInput`.
+
 ### [Log with the request ID and the operation](https://pkg.go.dev/github.com/tyr-go/tyr#example-NewLogHandler)
 
 There is no logger in the context: code logs with the context, and `tyr.NewLogHandler` adds the request ID and the operation of the context to every record, at its top level, even in a group:
@@ -341,7 +379,7 @@ func metrics(next http.Handler) http.Handler {
 // => POST /rpc -
 ```
 
-A whole service, [`examples/shortlink`](examples/shortlink), is a URL shortener built on tyr the way a user would build it: an in-memory store, REST and JSON-RPC, a contract that its tests call with the typed client, validation, `MapError`, authorization with an interceptor, middleware, graceful shutdown and end-to-end tests.
+A whole service, [`examples/shortlink`](examples/shortlink), is a URL shortener built on tyr the way a user would build it: an in-memory store, REST and JSON-RPC, a contract that documents it and that its tests call with the typed client, OpenAPI and OpenRPC documents, validation, `MapError`, authorization with an interceptor, middleware, graceful shutdown and end-to-end tests.
 
 ## Middleware
 
@@ -360,7 +398,7 @@ A whole service, [`examples/shortlink`](examples/shortlink), is a URL shortener 
 - [x] v0.1: REST
 - [x] v0.2: JSON-RPC 2.0, the `canceled` kind, `RequestInfo` for access logs and metrics
 - [x] v0.3: contracts (`Define`), a typed JSON-RPC client, an in-process client for tests
-- [ ] JSON Schema, OpenAPI 3.1 and OpenRPC from the same types
+- [x] v0.4: OpenAPI 3.1 and OpenRPC documents, with JSON Schemas of the same types; problem types of kinds
 - [ ] OpenTelemetry, timeouts, CORS and an adapter for all of go-playground/validator
 - [ ] Later: a REST client, a TypeScript client, NATS and MCP
 
@@ -374,13 +412,15 @@ go vet ./...
 go test -race ./...
 golangci-lint run
 (cd internal/playgroundtest && go test ./...)
-go test ./rest ./jsonrpc -update
+(cd internal/schematest && go test ./...)
+go test ./rest ./jsonrpc ./internal/plan ./examples/shortlink -update
 go test -run '^$' -bench . -benchmem ./...
 ```
 
 - golangci-lint v2.13.2 must be built with Go 1.27, for generic methods: `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2`.
 - `internal/playgroundtest` is a module of its own, so that the root module has no dependencies: it checks that the `validate` tags of the core fail the same fields as go-playground/validator v10.30.5.
-- `-update` rewrites the golden files of `rest` and `jsonrpc`.
+- `internal/schematest` is one too: with a JSON Schema validator, it checks the schemas against the JSON that `encoding/json/v2` writes and reads, in Draft 7 and 2020-12, and every OpenAPI and OpenRPC document of the repository against the official schemas of those formats.
+- `-update` rewrites the golden files, the documents among them.
 - `TestREADME` checks the results in this README against the output of the examples they come from, named by a comment such as `<!-- Output: rest.ExampleMount -->` before the block.
 - CI runs these on every push and pull request. Commits follow [Conventional Commits](https://www.conventionalcommits.org).
 
