@@ -14,10 +14,13 @@ import (
 // member is a member of the JSON object of a struct type: a field of the
 // struct or of a struct embedded in it, as encoding/json/v2 sees it.
 type member struct {
-	name   string              // the member's name
-	tagged bool                // the json tag gives the name
-	index  []int               // of the field, through embedded structs
-	field  reflect.StructField // the Go field
+	name     string              // the member's name
+	tagged   bool                // the json tag gives the name
+	index    []int               // of the field, through embedded structs
+	field    reflect.StructField // the Go field
+	omit     bool                // omitzero or omitempty may leave it out
+	quoted   bool                // the string option: a number in a JSON string
+	indirect bool                // under an embedded pointer, which leaves it out while nil
 }
 
 // members returns the members of the JSON object of the struct type t, in
@@ -36,16 +39,25 @@ type member struct {
 // also fails if t has JSON methods, maybe promoted from an embedded
 // struct: then json/v2 uses them instead of t's fields.
 func members(t reflect.Type) ([]member, error) {
+	ms, _, err := objectOf(t)
+	return ms, err
+}
+
+// objectOf returns the members of the JSON object of the struct type t, as
+// members does, and the type of its embedded fallback for unknown members,
+// a map[~string]T or jsontext.Value, or nil if it has none.
+func objectOf(t reflect.Type) (ms []member, fallback reflect.Type, err error) {
 	if hasJSONMethods(t) {
-		return nil, fmt.Errorf("%v has JSON methods, so its fields aren't members of a JSON object", t)
+		return nil, nil, fmt.Errorf("%v has JSON methods, so its fields aren't members of a JSON object", t)
 	}
 	if err := json.Unmarshal([]byte("{}"), reflect.New(t).Interface()); err != nil {
-		return nil, fmt.Errorf("json/v2 can't use %v: %w", t, err)
+		return nil, nil, fmt.Errorf("json/v2 can't use %v: %w", t, err)
 	}
 	type queued struct {
-		typ   reflect.Type
-		index []int
-		visit bool // whether to visit the structs embedded in typ
+		typ      reflect.Type
+		index    []int
+		visit    bool // whether to visit the structs embedded in typ
+		indirect bool // an embedded pointer is on the way
 	}
 	queue := []queued{{typ: t, visit: true}}
 	seen := map[reflect.Type]bool{t: true}
@@ -58,26 +70,35 @@ func members(t reflect.Type) ([]member, error) {
 		queue = queue[1:]
 		for i := range q.typ.NumField() {
 			sf := q.typ.Field(i)
-			name, tagged, embed, ignored := parseJSONTag(sf)
-			if ignored || !sf.IsExported() && !sf.Anonymous {
+			tag := parseJSONTag(sf)
+			if tag.ignored || !sf.IsExported() && !sf.Anonymous {
 				continue
 			}
 			index := append(slices.Clip(q.index), i)
-			if embed || sf.Anonymous && !tagged {
+			if tag.embed || sf.Anonymous && !tag.tagged {
 				et := sf.Type
-				if et.Kind() == reflect.Pointer && et.Name() == "" {
+				pointer := et.Kind() == reflect.Pointer && et.Name() == ""
+				if pointer {
 					et = et.Elem()
 				}
 				if et.Kind() != reflect.Struct {
-					continue // a fallback for unknown members, not a member
+					// A map or a jsontext.Value, as json/v2 accepted t: a
+					// fallback for unknown members, not a member.
+					if fallback == nil {
+						fallback = et
+					}
+					continue
 				}
 				if q.visit {
-					queue = append(queue, queued{typ: et, index: index, visit: !seen[et]})
+					queue = append(queue, queued{typ: et, index: index, visit: !seen[et], indirect: q.indirect || pointer})
 				}
 				seen[et] = true
 				continue
 			}
-			all = append(all, member{name: name, tagged: tagged, index: index, field: sf})
+			all = append(all, member{
+				name: tag.name, tagged: tag.tagged, index: index, field: sf,
+				omit: tag.omit, quoted: tag.quoted, indirect: q.indirect,
+			})
 		}
 	}
 
@@ -106,29 +127,44 @@ func members(t reflect.Type) ([]member, error) {
 	slices.SortFunc(kept, func(x, y member) int {
 		return slices.Compare(x.index, y.index)
 	})
-	return kept, nil
+	return kept, fallback, nil
 }
 
-// parseJSONTag returns what the json tag of sf says: the JSON name, which
-// is the Go name if the tag gives none, whether the tag gives it, whether
-// the field has the embed option, and whether the field is left out.
-func parseJSONTag(sf reflect.StructField) (name string, tagged, embed, ignored bool) {
+// jsonTag is what the json tag of a field says.
+type jsonTag struct {
+	name    string // the JSON name, which is the Go name if the tag gives none
+	tagged  bool   // the tag gives the name
+	embed   bool   // the embed option
+	ignored bool   // json:"-": the field is left out
+	omit    bool   // the omitzero or the omitempty option
+	quoted  bool   // the string option
+}
+
+// parseJSONTag returns what the json tag of sf says.
+func parseJSONTag(sf reflect.StructField) jsonTag {
 	tag, ok := sf.Tag.Lookup("json")
 	if tag == "-" {
-		return "", false, false, true
+		return jsonTag{ignored: true}
 	}
-	name = sf.Name
+	t := jsonTag{name: sf.Name}
 	if !ok {
-		return name, false, false, false
+		return t
 	}
 	given, opts, _ := strings.Cut(tag, ",")
 	if given != "" {
-		name, tagged = given, true
+		t.name, t.tagged = given, true
 	}
 	for opt := range strings.SplitSeq(opts, ",") {
-		embed = embed || opt == "embed"
+		switch opt {
+		case "embed":
+			t.embed = true
+		case "omitzero", "omitempty":
+			t.omit = true
+		case "string":
+			t.quoted = true
+		}
 	}
-	return name, tagged, embed, false
+	return t
 }
 
 // hasJSONMethods reports whether values of type t marshal or unmarshal

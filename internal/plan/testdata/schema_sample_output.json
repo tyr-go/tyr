@@ -1,0 +1,81 @@
+{
+  "schema": {
+    "$ref": "#/$defs/sample"
+  },
+  "$defs": {
+    "Inner": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "code",
+        "count"
+      ]
+    },
+    "sample": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "The code of the link."
+        },
+        "url": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "count": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^-?(0|[1-9][0-9]*)$"
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "Inner": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Inner"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "url",
+        "count",
+        "tags",
+        "level",
+        "id",
+        "Inner"
+      ]
+    }
+  }
+}

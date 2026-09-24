@@ -18,9 +18,11 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.27"
-          # The root module has no dependencies: only the module of
-          # internal/playgroundtest has a go.sum.
-          cache-dependency-path: internal/playgroundtest/go.sum
+          # The root module has no dependencies: only the modules of the
+          # tests in internal/ have go.sum files.
+          cache-dependency-path: |
+            internal/playgroundtest/go.sum
+            internal/schematest/go.sum
 
       - name: gofmt
         run: |
@@ -47,6 +49,12 @@ jobs:
 
       - name: internal/playgroundtest
         working-directory: internal/playgroundtest
+        run: |
+          go vet ./...
+          go test -race ./...
+
+      - name: internal/schematest
+        working-directory: internal/schematest
         run: |
           go vet ./...
           go test -race ./...

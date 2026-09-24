@@ -1,0 +1,28 @@
+{
+  "schema": {
+    "$ref": "#/$defs/embedded"
+  },
+  "$defs": {
+    "embedded": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer"
+        },
+        "note": {
+          "type": "string"
+        },
+        "own": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "limit",
+        "own"
+      ],
+      "additionalProperties": {
+        "type": "integer"
+      }
+    }
+  }
+}

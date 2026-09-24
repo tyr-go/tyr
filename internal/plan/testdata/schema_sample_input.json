@@ -1,0 +1,84 @@
+{
+  "schema": {
+    "$ref": "#/$defs/sample"
+  },
+  "$defs": {
+    "Inner": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer"
+        }
+      }
+    },
+    "sample": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "The code of the link.",
+          "minLength": 4,
+          "maxLength": 16
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "minLength": 1,
+          "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://[^/?#]"
+        },
+        "note": {
+          "type": "string"
+        },
+        "count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 3
+        },
+        "level": {
+          "type": "integer",
+          "enum": [
+            1,
+            2
+          ],
+          "minimum": 0,
+          "maximum": 255
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^-?(0|[1-9][0-9]*)$"
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "Inner": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Inner"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "url",
+        "level"
+      ]
+    }
+  }
+}

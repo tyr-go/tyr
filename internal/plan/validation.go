@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"net/url"
@@ -12,6 +13,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/tyr-go/tyr/internal/jsonschema"
 )
 
 // Violation is a field that failed validation.
@@ -47,6 +50,10 @@ type rule struct {
 	name   string
 	detail string                                       // of a violation
 	check  func(v reflect.Value, fromPointer bool) bool // v has no pointers left
+	// keywords add to s, the JSON Schema of the values of the field, what
+	// the rule demands of them, as far as JSON Schema can say it; f is how
+	// they look in JSON. Every rule has them, next to its check.
+	keywords func(s *jsonschema.Schema, f form)
 }
 
 // hint ends the message about a rule the core doesn't know.
@@ -177,18 +184,18 @@ func (b *validationBuilder) build(t reflect.Type, path string) (*validatedStruct
 // a struct that JSON embeds, the JSON name otherwise, and the Go name for
 // a field that JSON leaves out.
 func segment(sf reflect.StructField) string {
-	name, tagged, embed, ignored := parseJSONTag(sf)
-	if ignored {
+	tag := parseJSONTag(sf)
+	if tag.ignored {
 		return pointer("", sf.Name)
 	}
 	t := sf.Type
 	if t.Kind() == reflect.Pointer && t.Name() == "" {
 		t = t.Elem()
 	}
-	if (embed || sf.Anonymous && !tagged) && t.Kind() == reflect.Struct {
+	if (tag.embed || sf.Anonymous && !tag.tagged) && t.Kind() == reflect.Struct {
 		return ""
 	}
-	return pointer("", name)
+	return pointer("", tag.name)
 }
 
 // parseRules returns the rules of the validate tag of the field name, whose
@@ -209,6 +216,12 @@ func parseRules(name, tag string, t reflect.Type) ([]rule, error) {
 	return rules, nil
 }
 
+// ruleNames are the names of the rules that the core knows.
+var ruleNames = []string{
+	"required", "omitempty", "min", "max", "len", "gt", "gte", "lt", "lte",
+	"oneof", "email", "url", "http_url", "uuid",
+}
+
 // newRule returns the rule key=param for values of type t.
 func newRule(key, param string, t reflect.Type) (rule, error) {
 	r := rule{name: key}
@@ -219,15 +232,42 @@ func newRule(key, param string, t reflect.Type) (rule, error) {
 	case "required":
 		r.detail = "is required"
 		r.check = hasValue
+		r.keywords = func(s *jsonschema.Schema, f form) {
+			// The member is required anyway. The value must be non-zero,
+			// unless it is behind a pointer, which may point to zero.
+			if f.pointer || f.quoted {
+				return
+			}
+			switch k := t.Kind(); {
+			case t == reflect.TypeFor[time.Time]():
+				// The zero time, as json/v2 writes it. Other ways to write
+				// that instant in UTC, such as with fractions of a second,
+				// escape the keyword.
+				if s.Not == nil {
+					s.Not = &jsonschema.Schema{Const: jsontext.Value(`"0001-01-01T00:00:00Z"`)}
+				}
+			case k == reflect.String:
+				bound(s, characters, atLeast, 1)
+			case k == reflect.Bool:
+				s.Const = jsontext.Value("true")
+			case isInt(k) || isUint(k) || k == reflect.Float32 || k == reflect.Float64:
+				if s.Not == nil {
+					s.Not = &jsonschema.Schema{Const: jsontext.Value("0")}
+				}
+			}
+		}
 		return r, nil
 	case "omitempty":
-		return r, nil // handled by validatedField.validate
+		// Handled by validatedField.validate. It adds no keywords: a schema
+		// describes the canonical form, where a zero value that omitempty
+		// skips isn't sent at all.
+		r.keywords = func(*jsonschema.Schema, form) {}
+		return r, nil
 	}
 
 	c, compares := comparisonOf(key)
-	known := compares || key == "oneof" || key == "email" || key == "url" || key == "http_url" || key == "uuid"
 	switch {
-	case !known:
+	case !slices.Contains(ruleNames, key):
 		return r, fmt.Errorf("unknown rule %q; %s", key, hint)
 	case t.ConvertibleTo(reflect.TypeFor[time.Time]()):
 		return r, fmt.Errorf("rule %q doesn't apply to %v: the core supports only required and omitempty for times", key, t)
@@ -309,9 +349,21 @@ func compareRule(r rule, c comparison, param string, t reflect.Type) (rule, erro
 			r.check = func(v reflect.Value, _ bool) bool {
 				return holds(c.op, int64(utf8.RuneCountInString(v.String())), n)
 			}
+			// Runes are code points, which JSON Schema counts too.
+			r.keywords = func(s *jsonschema.Schema, _ form) { bound(s, characters, c.op, n) }
 		} else {
 			r.detail = fmt.Sprintf(c.items, count(n, "item"))
 			r.check = func(v reflect.Value, _ bool) bool { return holds(c.op, int64(v.Len()), n) }
+			switch {
+			case k != reflect.Map && t.Elem() == reflect.TypeFor[byte]():
+				// Bytes are a base64 string, whose length JSON Schema can't
+				// relate to the number of bytes.
+				r.keywords = func(*jsonschema.Schema, form) {}
+			case k == reflect.Map:
+				r.keywords = func(s *jsonschema.Schema, _ form) { bound(s, properties, c.op, n) }
+			default:
+				r.keywords = func(s *jsonschema.Schema, _ form) { bound(s, items, c.op, n) }
+			}
 		}
 	case isInt(k):
 		n, err := parseInt(param, t)
@@ -324,6 +376,7 @@ func compareRule(r rule, c comparison, param string, t reflect.Type) (rule, erro
 		}
 		r.detail = fmt.Sprintf(c.number, text)
 		r.check = func(v reflect.Value, _ bool) bool { return holds(c.op, v.Int(), n) }
+		r.keywords = numberKeywords(c.op, jsontext.Value(strconv.FormatInt(n, 10)))
 	case isUint(k):
 		n, err := strconv.ParseUint(param, 0, 64)
 		if err != nil {
@@ -331,17 +384,35 @@ func compareRule(r rule, c comparison, param string, t reflect.Type) (rule, erro
 		}
 		r.detail = fmt.Sprintf(c.number, strconv.FormatUint(n, 10))
 		r.check = func(v reflect.Value, _ bool) bool { return holds(c.op, v.Uint(), n) }
+		r.keywords = numberKeywords(c.op, jsontext.Value(strconv.FormatUint(n, 10)))
 	case k == reflect.Float32 || k == reflect.Float64:
 		n, err := strconv.ParseFloat(param, t.Bits())
 		if err != nil {
 			return bad(err)
 		}
-		r.detail = fmt.Sprintf(c.number, strconv.FormatFloat(n, 'g', -1, t.Bits()))
+		text := strconv.FormatFloat(n, 'g', -1, t.Bits())
+		r.detail = fmt.Sprintf(c.number, text)
 		r.check = func(v reflect.Value, _ bool) bool { return holds(c.op, v.Float(), n) }
+		r.keywords = func(s *jsonschema.Schema, f form) {
+			if !f.quoted {
+				limitFloat(s, c.op, n, text)
+			}
+		}
 	default:
 		return r, fmt.Errorf("rule %q doesn't apply to %v", r.name, t)
 	}
 	return r, nil
+}
+
+// numberKeywords returns the keywords of a comparison of an integer with p,
+// the parameter as a JSON number. A number in a JSON string, by the string
+// option, gets none: JSON Schema can't compare it.
+func numberKeywords(op operator, p jsontext.Value) func(s *jsonschema.Schema, f form) {
+	return func(s *jsonschema.Schema, f form) {
+		if !f.quoted {
+			limit(s, op, p)
+		}
+	}
 }
 
 // splitParams splits the parameter of oneof as go-playground does: into
@@ -375,7 +446,35 @@ func oneOfRule(r rule, param string, t reflect.Type) (rule, error) {
 	r.check = func(v reflect.Value, _ bool) bool {
 		return slices.Contains(values, text(v))
 	}
+	r.keywords = func(s *jsonschema.Schema, f form) {
+		s.Enum = nil
+		for _, v := range values {
+			switch {
+			case t.Kind() == reflect.String:
+				s.Enum = append(s.Enum, quote(v))
+			case !isNumeral(v):
+				// No integer has this text, so no value matches it.
+			case f.quoted:
+				s.Enum = append(s.Enum, quote(v))
+			default:
+				s.Enum = append(s.Enum, jsontext.Value(v))
+			}
+		}
+		if len(s.Enum) == 0 {
+			nothing(s)
+		}
+	}
 	return r, nil
+}
+
+// isNumeral reports whether s is an integer as strconv formats one, the
+// only text of an integer that oneof can match.
+func isNumeral(s string) bool {
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return strconv.FormatInt(n, 10) == s
+	}
+	n, err := strconv.ParseUint(s, 10, 64)
+	return err == nil && strconv.FormatUint(n, 10) == s
 }
 
 // stringRule returns the rule email, url, http_url or uuid, which check
@@ -406,8 +505,27 @@ func stringRule(r rule, param string, t reflect.Type) (rule, error) {
 		}
 		return matches(v.Interface().(fmt.Stringer).String())
 	}
+	r.keywords = func(s *jsonschema.Schema, _ form) {
+		if !isString {
+			return // a Stringer, whose JSON may not be the string it checks
+		}
+		switch r.name {
+		case "email":
+			s.Format = "email"
+		case "url":
+			s.Format = "uri"
+		case "http_url":
+			s.Format, s.Pattern = "uri", httpURLPattern
+		default:
+			s.Format = "uuid"
+		}
+	}
 	return r, nil
 }
+
+// httpURLPattern is the pattern of http_url, next to the format uri: the
+// scheme http or https, in any case, and a host.
+const httpURLPattern = "^[Hh][Tt][Tt][Pp][Ss]?://[^/?#]"
 
 // isURL is isURL of go-playground: a URL with a scheme and, but for file
 // URLs, which need a path, a host, a fragment or an opaque part.
