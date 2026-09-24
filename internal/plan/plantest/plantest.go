@@ -6,7 +6,10 @@
 package plantest
 
 import (
+	"encoding/json/v2"
+	"fmt"
 	"math"
+	"slices"
 	"time"
 )
 
@@ -275,6 +278,61 @@ type Formats struct {
 	WebBare  string `json:"web_bare" validate:"http_url"`
 }
 
+// Level is an int that JSON carries as its name, by its methods of text,
+// as a type of an enum often is.
+type Level int
+
+// levelNames are the names of the levels, by their values.
+var levelNames = []string{"debug", "info", "warn"}
+
+// MarshalText returns the name of l.
+func (l Level) MarshalText() ([]byte, error) {
+	if l < 0 || int(l) >= len(levelNames) {
+		return nil, fmt.Errorf("level %d has no name", int(l))
+	}
+	return []byte(levelNames[l]), nil
+}
+
+// UnmarshalText sets l to the level that text names.
+func (l *Level) UnmarshalText(text []byte) error {
+	i := slices.Index(levelNames, string(text))
+	if i < 0 {
+		return fmt.Errorf("unknown level %q", text)
+	}
+	*l = Level(i)
+	return nil
+}
+
+// Cents is an amount of money that JSON carries as a string of its units
+// and cents, such as "1.50", by its methods of JSON.
+type Cents int64
+
+// MarshalJSON writes c as a string of its units and cents.
+func (c Cents) MarshalJSON() ([]byte, error) {
+	return fmt.Appendf(nil, `"%d.%02d"`, c/100, c%100), nil
+}
+
+// UnmarshalJSON reads c from a string of its units and cents.
+func (c *Cents) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	var units, cents int64
+	if _, err := fmt.Sscanf(s, "%d.%02d", &units, &cents); err != nil {
+		return fmt.Errorf("want an amount such as 1.50: %w", err)
+	}
+	*c = Cents(units*100 + cents)
+	return nil
+}
+
+// Methods has rules on types that JSON carries by methods of their own:
+// the rules check the Go values, of which JSON Schema sees only the JSON.
+type Methods struct {
+	Level Level `json:"level" validate:"oneof=1 2"`
+	Cents Cents `json:"cents" validate:"min=100"`
+}
+
 // Checks returns values with valid and invalid fields and the violations
 // the core reports for them: for each field, the first rule it fails, in
 // the order of the fields.
@@ -461,6 +519,20 @@ func Checks() []Check {
 			Name:  "skipped fields",
 			Value: Skipped{hidden: ""},
 			Want:  []Violation{{"/Ignored", "is required"}},
+		},
+		{
+			// The rules check the values, whatever their JSON: "info" is
+			// the level 1, and "1.50" 150 cents.
+			Name:  "valid methods",
+			Value: Methods{Level: 1, Cents: 150},
+		},
+		{
+			Name:  "invalid methods",
+			Value: Methods{Level: 0, Cents: 50},
+			Want: []Violation{
+				{"/level", "must be one of: 1, 2"},
+				{"/cents", "must be at least 100"},
+			},
 		},
 	}
 }

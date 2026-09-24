@@ -133,6 +133,11 @@ func TestSchemaKeywords(t *testing.T) {
 		{"http_url", reflect.TypeFor[string](), `" validate:"omitempty,http_url"`, `{"type":"string","format":"uri","pattern":"^[Hh][Tt][Tt][Pp][Ss]?://[^/?#]"}`, false},
 		{"uuid", reflect.TypeFor[string](), `" validate:"omitempty,uuid"`, `{"type":"string","format":"uuid"}`, false},
 		{"uuid of a Stringer", reflect.TypeFor[uuid.UUID](), `" validate:"uuid"`, `{"type":"string","format":"uuid"}`, false},
+		// The rules check the value of a type with methods of JSON or text,
+		// whose JSON may be anything: they add no keywords.
+		{"oneof of an int of text", reflect.TypeFor[plantest.Level](), `" validate:"oneof=1 2"`, `{"type":"string"}`, true},
+		{"min of an int of JSON", reflect.TypeFor[plantest.Cents](), `" validate:"omitempty,min=100"`, `{}`, false},
+		{"oneof of a pointer to an int of text", reflect.TypeFor[*plantest.Level](), `" validate:"omitempty,oneof=1 2"`, `{"type":["string","null"]}`, false},
 		{"required struct", reflect.TypeFor[plantest.Inner](), `" validate:"required"`, `{"$ref":"#/$defs/Inner"}`, true},
 		{"struct with required members", reflect.TypeFor[plantest.Profile](), `"`, `{"$ref":"#/$defs/Profile"}`, true},
 		{"described", reflect.TypeFor[string](), `" doc:"The code."`, `{"type":"string"}`, false},

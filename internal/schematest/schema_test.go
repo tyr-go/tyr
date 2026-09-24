@@ -325,6 +325,13 @@ var (
 			// A field that JSON leaves out can't be sent, so no schema has it.
 			"/Ignored": `json:"-" with required`,
 		},
+		"invalid methods": {
+			// A type with methods of text or JSON writes its value as it
+			// likes, such as a level as its name, and the rules check the
+			// value, which its schema can't see.
+			"/level": "oneof of an int of text",
+			"/cents": "min of an int of JSON",
+		},
 	}
 	stricter = map[string]map[string]string{
 		"nesting": {

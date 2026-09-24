@@ -352,7 +352,14 @@ func (s *Schemas) member(m member, dir Direction, required bool, path string) (*
 		if err != nil {
 			return nil, err
 		}
-		sch = withRules(sch, rules, f)
+		// The rules check the Go value. A type that JSON carries by
+		// methods of its own may write it in any way, such as an int as
+		// its name, so the keywords of the rules would demand of its JSON
+		// what they demand of the value: they add nothing. A time.Time is
+		// the exception, whose JSON the keywords know.
+		if methodsOf(t, dir) == noMethods || t == reflect.TypeFor[time.Time]() {
+			sch = withRules(sch, rules, f)
+		}
 	}
 	if nullable {
 		sch = jsonschema.Nullable(sch)
