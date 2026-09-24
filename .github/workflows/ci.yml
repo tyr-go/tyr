@@ -21,6 +21,7 @@ jobs:
           # The root module has no dependencies: only the modules with
           # some have go.sum files.
           cache-dependency-path: |
+            oteltyr/go.sum
             validate/playground/go.sum
             internal/playgroundtest/go.sum
             internal/schematest/go.sum
@@ -47,6 +48,13 @@ jobs:
           # Built with the Go above: a release binary built with an older Go
           # can't read the generic methods of Go 1.27.
           install-mode: goinstall
+
+      - name: oteltyr
+        working-directory: oteltyr
+        run: |
+          go vet ./...
+          go test -race ./...
+          golangci-lint run ./...
 
       - name: validate/playground
         working-directory: validate/playground
