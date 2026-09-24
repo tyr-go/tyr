@@ -101,20 +101,22 @@ func TestRequest(t *testing.T) {
 
 func TestCanceledWhileServed(t *testing.T) {
 	// The cancellation of the context of the caller reaches the handler,
-	// and the contexts it derives from its own.
+	// and the contexts it derives from its own. The cause of the caller is
+	// one of the values that don't: the handler sees ctx.Err().
 	started := make(chan struct{})
-	var err, derived error
+	var err, derived, cause error
 	hc := inprocess.Client(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithCancel(r.Context())
 		defer cancel()
 		close(started)
 		<-ctx.Done()
-		err, derived = r.Context().Err(), ctx.Err()
+		err, derived, cause = r.Context().Err(), ctx.Err(), context.Cause(r.Context())
 	}))
-	ctx, cancel := context.WithCancel(t.Context())
+	errBye := errors.New("bye")
+	ctx, cancel := context.WithCancelCause(t.Context())
 	go func() {
 		<-started
-		cancel()
+		cancel(errBye)
 	}()
 	req, e := http.NewRequestWithContext(ctx, "GET", "http://links/", nil)
 	if e != nil {
@@ -125,6 +127,9 @@ func TestCanceledWhileServed(t *testing.T) {
 	}
 	if !errors.Is(err, context.Canceled) || !errors.Is(derived, context.Canceled) {
 		t.Errorf("the contexts of the handler are done with %v and %v, want context.Canceled", err, derived)
+	}
+	if cause != err {
+		t.Errorf("context.Cause in the handler = %v, want ctx.Err(), %v", cause, err)
 	}
 }
 

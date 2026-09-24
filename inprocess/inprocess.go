@@ -34,7 +34,9 @@ import (
 // authentication through the whole handler of the server, with the headers
 // that clients send. Likewise, the request ID of a jsonrpc.Client reaches
 // the context of h in its X-Request-ID header, by middleware.RequestID, as
-// it does over a network.
+// it does over a network. [context.Cause] of the context of h returns
+// ctx.Err(), not the cause of the context of the caller, which is one of
+// its values.
 //
 // As in a request of httptest.NewRequest, the remote address is
 // 192.0.2.1:1234, of a network for documentation (RFC 5737), which
