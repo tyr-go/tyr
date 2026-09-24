@@ -27,7 +27,8 @@ import (
 // succeeds, with a 2xx or 3xx status, with neither a route nor an
 // operation, Logger warns once, at the first such request: "middleware:
 // request without a route", with a hint. Requests that a mux or a
-// middleware below Logger rejects have no route anyway.
+// middleware below Logger rejects have no route anyway, nor do the
+// preflight requests that [CORS] answers.
 //
 // The status is the one the handler sent, or 200 if it sent none, as
 // net/http then does. A handler that took over the connection (see
@@ -70,7 +71,7 @@ func Logger(l *slog.Logger) func(http.Handler) http.Handler {
 					attrs = append(attrs, slog.Bool("aborted", true))
 				}
 				logger(l).LogAttrs(r.Context(), slog.LevelInfo, "middleware: request", attrs...)
-				if returned && !state.hijacked && route == "" && !hasOp && status >= 200 && status < 400 {
+				if returned && !state.hijacked && route == "" && !hasOp && status >= 200 && status < 400 && !isPreflight(r) {
 					warned.Do(func() {
 						logger(l).WarnContext(r.Context(), "middleware: request without a route", "hint",
 							"a middleware between Logger and the ServeMux passes on another request, "+

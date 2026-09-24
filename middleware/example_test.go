@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 
 	"github.com/tyr-go/tyr"
 	"github.com/tyr-go/tyr/middleware"
@@ -50,4 +51,42 @@ func ExampleChain() {
 	// {"level":"ERROR","msg":"middleware: panic","request_id":"req-bug","panic":"index out of range"}
 	// {"level":"INFO","msg":"middleware: request","request_id":"req-bug","method":"GET","route":"GET /links/{code}","status":500}
 	// 500 req-bug {"type":"about:blank","title":"Internal Server Error","status":500}
+}
+
+func ExampleCORS() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /links", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", "/links/go")
+		w.WriteHeader(http.StatusCreated)
+	})
+	cors := middleware.CORS{
+		Origins: []string{"https://app.example.com"},
+		Expose:  []string{"Location"},
+	}
+	handler := middleware.Chain(mux, cors.Handler, cors.CrossOriginProtection().Handler)
+
+	// send sends a request from a page of origin, as a browser does.
+	send := func(method, origin string, header ...string) {
+		req := httptest.NewRequest(method, "/links", strings.NewReader(`{"url":"https://go.dev"}`))
+		req.Header.Set("Origin", origin)
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		for i := 0; i+1 < len(header); i += 2 {
+			req.Header.Set(header[i], header[i+1])
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		fmt.Printf("%s from %s: %d, allow origin %q, expose %q\n", method, origin, rec.Code,
+			rec.Header().Get("Access-Control-Allow-Origin"), rec.Header().Get("Access-Control-Expose-Headers"))
+	}
+	// A page of the origin asks whether it may post JSON, and posts it.
+	send("OPTIONS", "https://app.example.com", "Access-Control-Request-Method", "POST", "Access-Control-Request-Headers", "content-type")
+	send("POST", "https://app.example.com", "Content-Type", "application/json")
+	// A page of another origin may do neither.
+	send("OPTIONS", "https://other.example.com", "Access-Control-Request-Method", "POST")
+	send("POST", "https://other.example.com", "Content-Type", "text/plain")
+	// Output:
+	// OPTIONS from https://app.example.com: 204, allow origin "https://app.example.com", expose ""
+	// POST from https://app.example.com: 201, allow origin "https://app.example.com", expose "Location"
+	// OPTIONS from https://other.example.com: 403, allow origin "", expose ""
+	// POST from https://other.example.com: 403, allow origin "", expose ""
 }

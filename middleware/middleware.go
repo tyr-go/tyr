@@ -1,5 +1,5 @@
 // Package middleware provides HTTP middleware for services built on tyr:
-// [RequestID], [Logger] and [Recover]. A middleware is a
+// [RequestID], [Logger], [Recover] and [CORS]. A middleware is a
 // func(http.Handler) http.Handler, so these mix with the middleware of the
 // standard library and other packages, and [Chain] applies them, the first
 // outermost:
@@ -24,6 +24,26 @@
 // Authorization doesn't belong in middleware: an operation served both
 // over REST and JSON-RPC would get past a check on its route. Check it in
 // an interceptor, see [tyr.API.Use].
+//
+// # Cross-origin requests
+//
+// [CORS] lets the pages of other origins call the service from browsers.
+// Its middleware goes between Logger and Recover, and the protection
+// against cross-site requests trusts the same origins:
+//
+//	cors := middleware.CORS{Origins: []string{"https://app.example.com"}}
+//	handler := middleware.Chain(mux,
+//		middleware.RequestID(),
+//		middleware.Logger(slog.Default()),
+//		cors.Handler,
+//		middleware.Recover(slog.Default()),
+//		cors.CrossOriginProtection().Handler,
+//	)
+//
+// Below Logger, the preflight requests that CORS answers itself are
+// logged. Above Recover, its headers stay on the 500 of Recover, which
+// keeps the headers of the middleware above it, so a page can read that
+// error too.
 //
 // # Response writers
 //

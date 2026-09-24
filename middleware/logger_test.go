@@ -203,7 +203,7 @@ func TestLoggerWarnsOfHiddenRoute(t *testing.T) {
 		below   []func(http.Handler) http.Handler // the middleware under Logger
 		method  string
 		target  string
-		header  []string
+		header  []string // pairs of names and values
 		warning bool
 	}{
 		{name: "hidden route", below: []func(http.Handler) http.Handler{withValue}, method: "GET", target: "/links/go", warning: true},
@@ -216,6 +216,10 @@ func TestLoggerWarnsOfHiddenRoute(t *testing.T) {
 			name: "rejected under Logger", below: []func(http.Handler) http.Handler{http.NewCrossOriginProtection().Handler},
 			method: "POST", target: "/links/go", header: []string{"Sec-Fetch-Site", "cross-site"},
 		},
+		{
+			name: "preflight that CORS answers", below: []func(http.Handler) http.Handler{middleware.CORS{Origins: []string{app}}.Handler},
+			method: "OPTIONS", target: "/links/go", header: []string{"Origin", app, "Access-Control-Request-Method", "POST"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -227,8 +231,8 @@ func TestLoggerWarnsOfHiddenRoute(t *testing.T) {
 			h := middleware.Chain(handler, append([]func(http.Handler) http.Handler{middleware.Logger(slog.New(logs))}, tt.below...)...)
 			for range 2 {
 				req := httptest.NewRequest(tt.method, tt.target, nil)
-				if tt.header != nil {
-					req.Header.Set(tt.header[0], tt.header[1])
+				for i := 0; i+1 < len(tt.header); i += 2 {
+					req.Header.Set(tt.header[i], tt.header[i+1])
 				}
 				h.ServeHTTP(httptest.NewRecorder(), req)
 			}
