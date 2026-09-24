@@ -3,7 +3,6 @@ package rest_test
 import (
 	"context"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -92,52 +91,39 @@ func docAPI() *tyr.API {
 }
 
 func TestOpenAPI(t *testing.T) {
-	api := docAPI()
-	h := rest.OpenAPI(api, tyr.Info{Title: "links", Version: "1.0.0", Description: "Short links."},
-		rest.Challenge(`Bearer realm="links"`))
+	routes := rest.Mount(http.NewServeMux(), docAPI(), rest.Challenge(`Bearer realm="links"`))
+	h := routes.OpenAPI(tyr.Info{Title: "links", Version: "1.0.0", Description: "Short links."})
 
 	rec := do(h, "GET", "/openapi.json", "", "")
 	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/json" {
 		t.Errorf("GET = %d %v, want 200 JSON", rec.Code, rec.Header())
 	}
 	golden(t, "openapi", rec.Body.Bytes())
-
-	// It sealed the API: an operation left out would be a surprise.
-	register := func() {
-		api.Handle("links.late", func(ctx context.Context, req struct{}) (struct{}, error) { return struct{}{}, nil })
-	}
-	if got := panicValue(register); got == nil {
-		t.Error("Handle() after OpenAPI didn't panic")
-	}
 }
 
 func TestOpenAPIPanics(t *testing.T) {
 	info := tyr.Info{Title: "links", Version: "1.0.0"}
 	noop := func(ctx context.Context, req struct{}) (string, error) { return "", nil }
+	openAPI := func(api *tyr.API, info tyr.Info) func() {
+		return func() { rest.Mount(http.NewServeMux(), api).OpenAPI(info) }
+	}
 	tests := []struct {
 		name string
 		f    func()
 		want string
 	}{
-		{"nil API", func() { rest.OpenAPI(nil, info) }, "rest: OpenAPI: nil API"},
-		{"no title", func() { rest.OpenAPI(newAPI(), tyr.Info{Version: "1.0.0"}) }, "rest: OpenAPI: the Info needs a Title and a Version"},
-		{"no version", func() { rest.OpenAPI(newAPI(), tyr.Info{Title: "links"}) }, "rest: OpenAPI: the Info needs a Title and a Version"},
-		{"nil option", func() { rest.OpenAPI(newAPI(), info, nil) }, "rest: OpenAPI: nil option"},
-		{"a route Mount rejects", func() {
-			api := newAPI()
-			api.Handle("links.get", noop, rest.Route("/links"))
-			rest.OpenAPI(api, info)
-		}, `rest: operation "links.get": pattern "/links" has no method, e.g. "GET /links"`},
+		{"no title", openAPI(newAPI(), tyr.Info{Version: "1.0.0"}), "rest: OpenAPI: the Info needs a Title and a Version"},
+		{"no version", openAPI(newAPI(), tyr.Info{Title: "links"}), "rest: OpenAPI: the Info needs a Title and a Version"},
 		{"a method OpenAPI doesn't know", func() {
 			api := newAPI()
 			api.Handle("links.find", noop, rest.Route("PROPFIND /links"))
-			rest.OpenAPI(api, info)
+			openAPI(api, info)()
 		}, `rest: operation "links.find": OpenAPI 3.1 has no method PROPFIND`},
 		{"one path of two hosts", func() {
 			api := newAPI()
 			api.Handle("status.a", noop, rest.Route("GET a.example.com/status"))
 			api.Handle("status.b", noop, rest.Route("GET b.example.com/status"))
-			rest.OpenAPI(api, info)
+			openAPI(api, info)()
 		}, `rest: operation "status.b": operation "status.a" is at GET /status too`},
 		{"a field JSON can't carry", func() {
 			type waitReq struct {
@@ -145,7 +131,7 @@ func TestOpenAPIPanics(t *testing.T) {
 			}
 			api := newAPI()
 			api.Handle("jobs.wait", func(ctx context.Context, req waitReq) (string, error) { return "", nil }, rest.Route("POST /wait"))
-			rest.OpenAPI(api, info)
+			openAPI(api, info)()
 		}, `rest: operation "jobs.wait": rest_test.waitReq.For: json/v2 has no representation of time.Duration`},
 	}
 	for _, tt := range tests {
@@ -155,8 +141,5 @@ func TestOpenAPIPanics(t *testing.T) {
 				t.Errorf("panicked with %q, want %q", got, tt.want)
 			}
 		})
-	}
-	if got, _ := panicValue(func() { rest.OpenAPI(nil, info) }).(string); !strings.HasPrefix(got, "rest: OpenAPI") {
-		t.Errorf("panicked with %q", got)
 	}
 }

@@ -115,9 +115,8 @@ var info = tyr.Info{
 func newServer(addr string, api *tyr.API, callers map[string]authz.Caller, logger *slog.Logger) *http.Server {
 	mux := http.NewServeMux()
 	// The document tells of the same challenge that REST sends.
-	restOpts := []rest.MountOption{rest.Challenge(`Bearer realm="shortlink"`)}
-	rest.Mount(mux, api, restOpts...)
-	mux.Handle("GET /openapi.json", rest.OpenAPI(api, info, restOpts...))
+	routes := rest.Mount(mux, api, rest.Challenge(`Bearer realm="shortlink"`))
+	mux.Handle("GET /openapi.json", routes.OpenAPI(info))
 	mux.Handle("POST /rpc", jsonrpc.Handler(api, jsonrpc.Discover(info)))
 
 	csrf := http.NewCrossOriginProtection()

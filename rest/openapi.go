@@ -15,12 +15,13 @@ import (
 	"github.com/tyr-go/tyr/internal/plan"
 )
 
-// OpenAPI seals api and returns a handler that serves the OpenAPI 3.1
-// document of the operations that [Mount] serves, as JSON, with info on the
-// API; opts are those of Mount, so that the document shows the same
-// problem types and challenges. The document is made once, here.
+// OpenAPI returns a handler that serves the OpenAPI 3.1 document of the
+// routes, as JSON, with info on the API; the document shows the problem
+// types and the challenges of the options of [Mount]. The document is made
+// once, here.
 //
-//	mux.Handle("GET /openapi.json", rest.OpenAPI(api, tyr.Info{Title: "shortlink", Version: "1.0.0"}))
+//	routes := rest.Mount(mux, api)
+//	mux.Handle("GET /openapi.json", routes.OpenAPI(tyr.Info{Title: "shortlink", Version: "1.0.0"}))
 //
 // An operation gets its route, its operationId, which is its name, and its
 // documentation (see [tyr.Doc]). The fields of its request tagged path,
@@ -32,20 +33,15 @@ import (
 // reads and writes, as json/v2 does; the validate tags of requests add
 // their constraints, and doc tags describe fields.
 //
-// OpenAPI panics where Mount does, and if api or an option is nil, info
-// has no Title or Version, a route has a method that OpenAPI 3.1 doesn't
-// know, or a type of a request or a result has a field that JSON can't
-// carry, such as a time.Duration.
-func OpenAPI(api *tyr.API, info tyr.Info, opts ...MountOption) http.Handler {
-	if api == nil {
-		panic("rest: OpenAPI: nil API")
-	}
+// OpenAPI panics if info has no Title or Version, a route has a method that
+// OpenAPI 3.1 doesn't know, two routes of different hosts have the same
+// method and path, or a type of a request or a result has a field that
+// JSON can't carry, such as a time.Duration.
+func (rs *Routes) OpenAPI(info tyr.Info) http.Handler {
 	if info.Title == "" || info.Version == "" {
 		panic("rest: OpenAPI: the Info needs a Title and a Version")
 	}
-	m := newMount("OpenAPI", opts)
-	api.Seal()
-	data, err := json.Marshal(openAPIOf(api, info, m), jsontext.WithIndent("  "))
+	data, err := json.Marshal(openAPIOf(rs, info), jsontext.WithIndent("  "))
 	if err != nil {
 		panic("rest: OpenAPI: " + err.Error()) // a bug: every part encodes
 	}
@@ -171,10 +167,10 @@ func (o ordered[T]) get(name string) (T, bool) {
 	return zero, false
 }
 
-// openAPIOf returns the OpenAPI document of the operations of api with a
-// route, as Mount serves them with m.
-func openAPIOf(api *tyr.API, info tyr.Info, m *mount) *openAPIDoc {
-	b := &openAPIBuilder{mount: m, schemas: plan.NewSchemas("#/components/schemas/")}
+// openAPIOf returns the OpenAPI document of the routes, as Mount serves
+// them.
+func openAPIOf(rs *Routes, info tyr.Info) *openAPIDoc {
+	b := &openAPIBuilder{mount: rs.mount, schemas: plan.NewSchemas("#/components/schemas/")}
 	b.schemas.Name(reflect.TypeFor[problem](), "Problem")
 	problemRef, err := b.schemas.Of(reflect.TypeFor[problem](), plan.Output)
 	if err != nil {
@@ -187,13 +183,9 @@ func openAPIOf(api *tyr.API, info tyr.Info, m *mount) *openAPIDoc {
 		Info:    openAPIInfo{Title: info.Title, Description: info.Description, Version: info.Version},
 		Paths:   ordered[*pathItem]{},
 	}
-	for op := range api.Operations() {
-		pattern, ok := RouteOf(op)
-		if !ok {
-			continue
-		}
-		h := newHandler(api, op, pattern, m) // checks the pattern, as Mount does
-		method, host, path := splitPattern(pattern)
+	for _, h := range rs.handlers {
+		op := h.op
+		method, host, path := splitPattern(h.pattern)
 		o := b.operation(op, h)
 		if host != "" {
 			o.Servers = []server{{URL: "//" + host}}

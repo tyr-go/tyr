@@ -34,9 +34,9 @@ func blank(status int, detail string) problem {
 
 // WriteError writes err as REST writes the error of an operation: as
 // application/problem+json with the type, the title and the status of its
-// kind, for handlers outside operations. opts are those of [Mount]: given
-// the same options, WriteError writes the types of [ProblemTypes] and the
-// WWW-Authenticate challenges of [Challenge] as the operations do.
+// kind, for handlers outside operations. It writes the default problem
+// types and no challenges; [Routes.WriteError] writes those of the options
+// of [Mount].
 //
 // An err that contains a [tyr.Error] is written as is. Otherwise, as
 // [tyr.Operation.Call] does for errors no mapper translates, a
@@ -46,12 +46,27 @@ func blank(status int, detail string) problem {
 // [tyr.KindInternal] with a generic message. An internal error, or one of
 // a kind rest doesn't know, reaches the client as "internal error" only,
 // and WriteError logs it to [slog.Default] with the context of r, with its
-// message, cause and details. WriteError panics if err or an option is nil.
-func WriteError(w http.ResponseWriter, r *http.Request, err error, opts ...MountOption) {
+// message, cause and details. WriteError panics if err is nil.
+func WriteError(w http.ResponseWriter, r *http.Request, err error) {
+	writeErrorOf(w, r, err, &mount{}, slog.Default(), "WriteError")
+}
+
+// WriteError writes err as the operations of the routes write their errors,
+// with the problem types and the challenges of the options of [Mount], for
+// handlers outside operations; otherwise it is the function [WriteError],
+// but that it logs an internal error with [tyr.API.Logger]. WriteError
+// panics if err is nil.
+func (rs *Routes) WriteError(w http.ResponseWriter, r *http.Request, err error) {
+	writeErrorOf(w, r, err, rs.mount, rs.api.Logger(), "Routes.WriteError")
+}
+
+// writeErrorOf implements WriteError and Routes.WriteError: it writes err
+// as m configures and logs an internal error to logger; call names the
+// function in panics.
+func writeErrorOf(w http.ResponseWriter, r *http.Request, err error, m *mount, logger *slog.Logger, call string) {
 	if err == nil {
-		panic("rest: WriteError: nil error")
+		panic("rest: " + call + ": nil error")
 	}
-	m := newMount("WriteError", opts)
 	e, ok := errors.AsType[*tyr.Error](err)
 	switch {
 	case ok && e == nil: // a nil *tyr.Error, returned as an error by mistake
@@ -68,9 +83,9 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error, opts ...Mount
 		if e.Details != nil {
 			args = append(args, "details", e.Details)
 		}
-		slog.Default().ErrorContext(r.Context(), "rest: internal error", args...)
+		logger.ErrorContext(r.Context(), "rest: internal error", args...)
 	}
-	writeError(r.Context(), slog.Default(), w, e, m)
+	writeError(r.Context(), logger, w, e, m)
 }
 
 // WriteProblem writes a problem of the HTTP request itself, as

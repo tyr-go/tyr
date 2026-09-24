@@ -60,7 +60,7 @@ tyr decodes the request, from the JSON body and then the fields tagged `path`, `
 - Handlers are plain functions, [`func(ctx, Req) (Res, error)`](https://pkg.go.dev/github.com/tyr-go/tyr#Handler), with no HTTP types
 - One operation over [REST](https://pkg.go.dev/github.com/tyr-go/tyr/rest) and [JSON-RPC 2.0](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc), by its name
 - [Contracts](https://pkg.go.dev/github.com/tyr-go/tyr#Define) that the server and a typed [JSON-RPC client](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Client) share, checked by the compiler, without codegen, and an [in-process client](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#InProcess) for tests
-- [OpenAPI 3.1](https://pkg.go.dev/github.com/tyr-go/tyr/rest#OpenAPI) and [OpenRPC](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Discover) documents made of the same types and contracts: JSON Schemas of what the server reads and writes, with the constraints of the `validate` tags, and the summaries, errors and examples of the contracts
+- [OpenAPI 3.1](https://pkg.go.dev/github.com/tyr-go/tyr/rest#Routes.OpenAPI) and [OpenRPC](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Discover) documents made of the same types and contracts: JSON Schemas of what the server reads and writes, with the constraints of the `validate` tags, and the summaries, errors and examples of the contracts
 - [Binding](https://pkg.go.dev/github.com/tyr-go/tyr/rest#hdr-Requests) from the JSON body, the path, the query and headers
 - [Validation](https://pkg.go.dev/github.com/tyr-go/tyr#hdr-Validation) by tags in the syntax of go-playground/validator and by a `Validate` method
 - [Errors of kinds](https://pkg.go.dev/github.com/tyr-go/tyr#Kind): RFC 9457 problems over REST, error codes over JSON-RPC
@@ -281,11 +281,11 @@ if e, ok := errors.AsType[*tyr.Error](err); ok {
 
 Any other error of `Call`, such as a failed connection or a 503 of a load balancer, isn't a `*tyr.Error`: the documentation of [`Client`](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Client) shows how to report those as `unavailable`.
 
-### [Document an API](https://pkg.go.dev/github.com/tyr-go/tyr/rest#example-OpenAPI)
+### [Document an API](https://pkg.go.dev/github.com/tyr-go/tyr/rest#example-Routes.OpenAPI)
 
-The contract documents its operation too, so the code and the documents share one source: `Summary`, `Description`, `Tags`, `Errors` and examples by `Contract.Example`, whose types the compiler checks; `doc` tags describe fields. REST serves an OpenAPI 3.1 document of the operations it serves, with the same options as `Mount`:
+The contract documents its operation too, so the code and the documents share one source: `Summary`, `Description`, `Tags`, `Errors` and examples by `Contract.Example`, whose types the compiler checks; `doc` tags describe fields. The routes that `rest.Mount` returns serve an OpenAPI 3.1 document of their operations, with the problem types and the challenges of the options of `Mount`:
 
-<!-- Output: rest.ExampleOpenAPI -->
+<!-- Output: rest.ExampleRoutes_OpenAPI -->
 ```go
 type GetLinkReq struct {
 	Code string `json:"code" path:"code" validate:"required" doc:"The code of the link."`
@@ -295,7 +295,8 @@ getLink := tyr.Define[GetLinkReq, Link]("links.get", rest.Route("GET /links/{cod
 	tyr.Summary("Get a link"), tyr.Errors(tyr.KindNotFound))
 api.Implement(getLink, get)
 
-mux.Handle("GET /openapi.json", rest.OpenAPI(api, tyr.Info{Title: "links", Version: "1.0.0"}))
+routes := rest.Mount(mux, api)
+mux.Handle("GET /openapi.json", routes.OpenAPI(tyr.Info{Title: "links", Version: "1.0.0"}))
 
 // GET /openapi.json: its method, path, operationId, summary and responses
 // => get /links/{code} links.get Get a link [200 400 404 default]

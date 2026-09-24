@@ -46,11 +46,10 @@ func ExampleProblemTypes() {
 		return struct{}{}, tyr.AlreadyExists("code is taken")
 	}, rest.Route("POST /links"))
 
-	// The kinds get URIs of the service's own. Handlers outside operations
-	// pass the same options to WriteError.
-	opts := []rest.MountOption{rest.ProblemTypes("https://shortlink.example/problems/")}
+	// The kinds get URIs of the service's own. The routes write the same
+	// types outside operations, with Routes.WriteError.
 	mux := http.NewServeMux()
-	rest.Mount(mux, api, opts...)
+	rest.Mount(mux, api, rest.ProblemTypes("https://shortlink.example/problems/"))
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("POST", "/links", nil))
@@ -102,7 +101,7 @@ func ExampleStatus() {
 	// 302 Location: https://go.dev
 }
 
-func ExampleOpenAPI() {
+func ExampleRoutes_OpenAPI() {
 	type GetLinkReq struct {
 		Code string `json:"code" path:"code" validate:"required" doc:"The code of the link."`
 	}
@@ -119,8 +118,8 @@ func ExampleOpenAPI() {
 	})
 
 	mux := http.NewServeMux()
-	rest.Mount(mux, api)
-	mux.Handle("GET /openapi.json", rest.OpenAPI(api, tyr.Info{Title: "links", Version: "1.0.0"}))
+	routes := rest.Mount(mux, api)
+	mux.Handle("GET /openapi.json", routes.OpenAPI(tyr.Info{Title: "links", Version: "1.0.0"}))
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/openapi.json", nil))
@@ -141,4 +140,28 @@ func ExampleOpenAPI() {
 	}
 	// Output:
 	// get /links/{code} links.get Get a link [200 400 404 default]
+}
+
+func ExampleRoutes_WriteError() {
+	api := tyr.New()
+	api.Handle("links.purge", func(ctx context.Context, req struct{}) (struct{}, error) {
+		return struct{}{}, tyr.Unauthenticated("log in first")
+	}, rest.Route("POST /links/purge"))
+
+	mux := http.NewServeMux()
+	routes := rest.Mount(mux, api, rest.Challenge(`Bearer realm="links"`))
+	// A handler outside operations writes its errors as the operations do,
+	// with the challenge of the options of Mount.
+	mux.HandleFunc("POST /links/import", func(w http.ResponseWriter, r *http.Request) {
+		routes.WriteError(w, r, tyr.Unauthenticated("log in first"))
+	})
+
+	for _, target := range []string{"/links/purge", "/links/import"} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest("POST", target, nil))
+		fmt.Println(rec.Code, rec.Header().Get("WWW-Authenticate"))
+	}
+	// Output:
+	// 401 Bearer realm="links"
+	// 401 Bearer realm="links"
 }

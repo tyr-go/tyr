@@ -100,10 +100,17 @@
 // operation records its route and the operation in the [tyr.RequestInfo]
 // of the request, if there is one, before anything else.
 //
-// Outside operations, [WriteError] writes an error as an operation's, and
-// [WriteProblem] a problem of the HTTP request, such as the 403 of
-// [http.CrossOriginProtection]. [ProblemHandler] makes the 404 and 405 of
-// the mux problems too, so that the API speaks one format of errors.
+// Outside operations, [Routes.WriteError] writes an error as the
+// operations do, and [WriteProblem] a problem of the HTTP request, such as
+// the 403 of [http.CrossOriginProtection]. [ProblemHandler] makes the 404
+// and 405 of the mux problems too, so that the API speaks one format of
+// errors.
+//
+// # Documents
+//
+// [Routes.OpenAPI] serves the OpenAPI 3.1 document of the operations that
+// Mount serves, with their documentation (see [tyr.Doc]) and the JSON
+// Schemas of their requests and results.
 package rest
 
 import (
@@ -175,8 +182,8 @@ func MaxBodyBytes(n int64) tyr.OpOption {
 	return limitKey.Option(n)
 }
 
-// MountOption configures [Mount]. [WriteError] takes the options of Mount
-// too, so that it writes errors as the operations do.
+// MountOption configures [Mount], and with it the OpenAPI document and the
+// errors of the [Routes] that Mount returns.
 type MountOption func(*mount)
 
 // mount is the configuration of Mount.
@@ -199,10 +206,11 @@ func newMount(call string, opts []MountOption) *mount {
 }
 
 // Challenge makes the 401 Unauthorized responses of the operations that
-// [Mount] serves, and of [WriteError] given the option, carry the challenge
-// in a WWW-Authenticate header, as RFC 9110 requires, e.g.
-// `Bearer realm="shortlink"`; each Challenge adds one. Challenge panics if
-// the challenge is empty or has a line break.
+// [Mount] serves, and of [Routes.WriteError], carry the challenge in a
+// WWW-Authenticate header, as RFC 9110 requires, e.g.
+// `Bearer realm="shortlink"`; each Challenge adds one. [Routes.OpenAPI]
+// shows the challenges too. Challenge panics if the challenge is empty or
+// has a line break.
 func Challenge(challenge string) MountOption {
 	if challenge == "" || strings.ContainsAny(challenge, "\r\n") {
 		panic(fmt.Sprintf("rest: Challenge(%q): want a challenge without line breaks", challenge))
@@ -220,7 +228,8 @@ func Challenge(challenge string) MountOption {
 // Without ProblemTypes, the type of a kind is its documentation, such as
 // https://pkg.go.dev/github.com/tyr-go/tyr#KindNotFound. Clients may tell
 // errors apart by their types, so the types are part of the API of a
-// service: pass the same ProblemTypes wherever it writes errors.
+// service: [Routes.WriteError] writes those of the operations, and
+// [Routes.OpenAPI] shows them.
 func ProblemTypes(base string) MountOption {
 	u, err := url.Parse(base)
 	if err != nil || !u.IsAbs() || !strings.HasSuffix(base, "/") && !strings.HasSuffix(base, "#") {
@@ -232,7 +241,12 @@ func ProblemTypes(base string) MountOption {
 }
 
 // Mount seals api and registers a handler on mux for every operation that
-// has a [Route]; operations without one are left out.
+// has a [Route]; operations without one are left out. It returns the
+// routes, whose OpenAPI document and errors outside operations come with
+// the same options:
+//
+//	routes := rest.Mount(mux, api, rest.Challenge(`Bearer realm="links"`))
+//	mux.Handle("GET /openapi.json", routes.OpenAPI(tyr.Info{Title: "links", Version: "1.0.0"}))
 //
 // Mount panics if a pattern has no method, ServeMux rejects a pattern or
 // finds that it conflicts with another, a wildcard has no path field or a
@@ -241,17 +255,31 @@ func ProblemTypes(base string) MountOption {
 // result can't set its header, or [Status] sets a redirect for a result
 // without a Location field or 204 or 205 for a result with JSON members.
 // It also panics if mux, api or an option is nil.
-func Mount(mux *http.ServeMux, api *tyr.API, opts ...MountOption) {
+func Mount(mux *http.ServeMux, api *tyr.API, opts ...MountOption) *Routes {
 	if mux == nil || api == nil {
 		panic("rest: Mount: nil mux or API")
 	}
 	m := newMount("Mount", opts)
 	api.Seal()
+	rs := &Routes{api: api, mount: m}
 	for op := range api.Operations() {
 		pattern, ok := RouteOf(op)
 		if !ok {
 			continue
 		}
-		handle(mux, op, pattern, newHandler(api, op, pattern, m))
+		h := newHandler(api, op, pattern, m)
+		handle(mux, op, pattern, h)
+		rs.handlers = append(rs.handlers, h)
 	}
+	return rs
+}
+
+// Routes are the routes that [Mount] registered for the operations of an
+// API, with the options of Mount, so that the OpenAPI document of the
+// routes and the errors that handlers outside operations write come out as
+// those of the operations. Mount makes them.
+type Routes struct {
+	api      *tyr.API
+	mount    *mount
+	handlers []*handler // of the operations with a route, in the order of registration
 }

@@ -183,26 +183,27 @@ func TestProblemTypes(t *testing.T) {
 	}, rest.Route("GET /links/{code}"))
 	types := rest.ProblemTypes("https://shortlink.example/problems/")
 	mux := http.NewServeMux()
-	rest.Mount(mux, api, types)
+	routes := rest.Mount(mux, api, types)
 
 	const notFound = `{"type":"https://shortlink.example/problems/not_found","title":"Not Found","status":404,"detail":"link \"go\" not found","kind":"not_found"}`
 	if rec := do(mux, "GET", "/links/go", "", ""); rec.Code != http.StatusNotFound || rec.Body.String() != notFound {
 		t.Errorf("GET /links/go = %d %s, want 404 %s", rec.Code, rec.Body, notFound)
 	}
 
-	// WriteError writes the same types, given the same options; the last
-	// ProblemTypes wins.
+	// The routes write the same types outside operations.
 	rec := httptest.NewRecorder()
-	rest.WriteError(rec, httptest.NewRequest("GET", "/", nil), tyr.NotFound("link %q not found", "go"), types)
+	routes.WriteError(rec, httptest.NewRequest("GET", "/", nil), tyr.NotFound("link %q not found", "go"))
 	if rec.Body.String() != notFound {
-		t.Errorf("WriteError() with ProblemTypes = %s, want %s", rec.Body, notFound)
+		t.Errorf("Routes.WriteError() = %s, want %s", rec.Body, notFound)
 	}
+
+	// The last ProblemTypes wins.
+	routes = rest.Mount(http.NewServeMux(), newAPI(), types, rest.ProblemTypes("https://shortlink.example/problems#"))
 	rec = httptest.NewRecorder()
-	rest.WriteError(rec, httptest.NewRequest("GET", "/", nil), tyr.AlreadyExists("code is taken"),
-		types, rest.ProblemTypes("https://shortlink.example/problems#"))
+	routes.WriteError(rec, httptest.NewRequest("GET", "/", nil), tyr.AlreadyExists("code is taken"))
 	const taken = `{"type":"https://shortlink.example/problems#already_exists","title":"Already Exists","status":409,"detail":"code is taken","kind":"already_exists"}`
 	if rec.Body.String() != taken {
-		t.Errorf("WriteError() with two ProblemTypes = %s, want %s", rec.Body, taken)
+		t.Errorf("Routes.WriteError() with two ProblemTypes = %s, want %s", rec.Body, taken)
 	}
 
 	// Without the / or the #, the name of a kind would run into the base.
@@ -214,24 +215,38 @@ func TestProblemTypes(t *testing.T) {
 	}
 }
 
-func TestWriteErrorChallenge(t *testing.T) {
-	challenge := rest.Challenge(`Bearer realm="shortlink"`)
+func TestRoutesWriteError(t *testing.T) {
+	var buf bytes.Buffer
+	api := tyr.New(tyr.WithLogger(slog.New(tyr.NewLogHandler(slog.NewJSONHandler(&buf, nil)))))
+	routes := rest.Mount(http.NewServeMux(), api, rest.Challenge(`Bearer realm="shortlink"`))
+
+	// A 401 gets the challenges of the options of Mount, and only a 401.
 	rec := httptest.NewRecorder()
-	rest.WriteError(rec, httptest.NewRequest("GET", "/", nil), tyr.Unauthenticated("log in first"), challenge)
+	routes.WriteError(rec, httptest.NewRequest("GET", "/", nil), tyr.Unauthenticated("log in first"))
 	if got := rec.Header().Values("WWW-Authenticate"); rec.Code != http.StatusUnauthorized || !slices.Equal(got, []string{`Bearer realm="shortlink"`}) {
-		t.Errorf("WriteError() = %d, WWW-Authenticate %q; want 401 with the challenge", rec.Code, got)
+		t.Errorf("Routes.WriteError() = %d, WWW-Authenticate %q; want 401 with the challenge", rec.Code, got)
 	}
 	rec = httptest.NewRecorder()
-	rest.WriteError(rec, httptest.NewRequest("GET", "/", nil), tyr.PermissionDenied("admins only"), challenge)
+	routes.WriteError(rec, httptest.NewRequest("GET", "/", nil), tyr.PermissionDenied("admins only"))
 	if rec.Code != http.StatusForbidden || rec.Header().Get("WWW-Authenticate") != "" {
-		t.Errorf("WriteError() = %d, WWW-Authenticate %q; want 403 without it", rec.Code, rec.Header().Get("WWW-Authenticate"))
+		t.Errorf("Routes.WriteError() = %d, WWW-Authenticate %q; want 403 without it", rec.Code, rec.Header().Get("WWW-Authenticate"))
 	}
 
-	write := func() {
-		rest.WriteError(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil), tyr.NotFound("gone"), nil)
+	// An internal error goes to the logger of the API, with the context of
+	// the request.
+	req := httptest.NewRequest("GET", "/", nil)
+	req = req.WithContext(tyr.WithRequestID(req.Context(), "req-1"))
+	rec = httptest.NewRecorder()
+	routes.WriteError(rec, req, errors.New("disk full"))
+	var record map[string]any
+	if rec.Code != http.StatusInternalServerError || json.Unmarshal(buf.Bytes(), &record) != nil ||
+		record["msg"] != "rest: internal error" || record["err"] != "internal: internal error: disk full" || record["request_id"] != "req-1" {
+		t.Errorf("Routes.WriteError() = %d, logged %s; want 500 and the error in the log of the API", rec.Code, buf.Bytes())
 	}
-	if got, want := panicValue(write), "rest: WriteError: nil option"; got != want {
-		t.Errorf("WriteError() with a nil option panicked with %v, want %q", got, want)
+
+	write := func() { routes.WriteError(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil), nil) }
+	if got, want := panicValue(write), "rest: Routes.WriteError: nil error"; got != want {
+		t.Errorf("Routes.WriteError(nil) panicked with %v, want %q", got, want)
 	}
 }
 
