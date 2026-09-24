@@ -14,6 +14,7 @@ package contract
 import (
 	"net/http"
 	"regexp"
+	"slices"
 	"time"
 
 	"github.com/tyr-go/tyr"
@@ -86,16 +87,24 @@ type Created struct {
 // random one.
 type CreateReq struct {
 	URL  string `json:"url" validate:"required,http_url" doc:"Where the link leads: an http or https URL."`
-	Code string `json:"code" validate:"omitempty,min=4,max=16" doc:"The code of the link, of a-z, 0-9 and '-'. Without it, the link gets a random one."`
+	Code string `json:"code" validate:"omitempty,min=4,max=16" doc:"The code of the link, of a-z, 0-9 and '-', other than livez and readyz, the paths of the probes of the service. Without it, the link gets a random one."`
 }
 
 var codeRe = regexp.MustCompile(`^[a-z0-9-]+$`)
 
-// Validate holds the rule tags can't express: the characters of the code.
+// reserved are the codes whose paths the service takes for its probes: the
+// short link /readyz couldn't be followed.
+var reserved = []string{"livez", "readyz"}
+
+// Validate holds the rules tags can't express: the characters of the code,
+// and the codes the service takes.
 func (r CreateReq) Validate() error {
 	var v tyr.Violations
-	if r.Code != "" && !codeRe.MatchString(r.Code) {
+	switch {
+	case r.Code != "" && !codeRe.MatchString(r.Code):
 		v.Add("code", "only a-z, 0-9 and '-'")
+	case slices.Contains(reserved, r.Code):
+		v.Add("code", "is taken by the service")
 	}
 	return v.Err()
 }

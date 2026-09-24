@@ -28,6 +28,7 @@ import (
 	"github.com/tyr-go/tyr/examples/shortlink/contract"
 	"github.com/tyr-go/tyr/examples/shortlink/links"
 	"github.com/tyr-go/tyr/examples/shortlink/store"
+	"github.com/tyr-go/tyr/health"
 	"github.com/tyr-go/tyr/inprocess"
 	"github.com/tyr-go/tyr/jsonrpc"
 )
@@ -37,6 +38,9 @@ const (
 	adminToken = "secret"
 	userToken  = "user-secret"
 )
+
+// app is the origin whose pages may call the service under test.
+const app = "https://app.example.com"
 
 // service is the service under test.
 type service struct {
@@ -55,7 +59,7 @@ func start(t *testing.T) *service {
 		adminToken: {Name: "admin", Roles: []string{"admin"}},
 		userToken:  {Name: "user"},
 	}
-	srv := newServer("", api, callers, logger)
+	srv := newServer("", api, callers, []string{app}, health.NewReadiness(), logger)
 	client := httptest.NewTestServer(t, srv.Handler).Client()
 	// Show redirects to the test instead of following them: the client of
 	// the test server sends requests to every host to the service.
@@ -204,6 +208,13 @@ func TestCreateInvalid(t *testing.T) {
 			want:   violation("/code", "only a-z, 0-9 and '-'"),
 		},
 		{
+			// The short link /readyz would be the probe.
+			name:   "code of a probe",
+			body:   `{"url":"https://go.dev","code":"readyz"}`,
+			status: http.StatusBadRequest,
+			want:   violation("/code", "is taken by the service"),
+		},
+		{
 			name:   "broken JSON",
 			body:   `{"url":}`,
 			status: http.StatusBadRequest,
@@ -238,13 +249,66 @@ func TestCreateInvalid(t *testing.T) {
 func TestCrossOrigin(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		s := start(t)
-		// A page of another site posts to the service from a browser.
-		const forbidden = `{"type":"about:blank","title":"Forbidden","status":403}`
-		if resp, body := s.do(t, "POST", "/links", `{"url":"https://evil.example"}`, "Sec-Fetch-Site", "cross-site"); resp.StatusCode != http.StatusForbidden || body != forbidden {
-			t.Errorf("cross-site create = %d %s, want 403 %s", resp.StatusCode, body, forbidden)
-		}
+		// A page of the service itself posts to it.
 		if resp, body := s.do(t, "POST", "/links", `{"url":"https://go.dev"}`, "Sec-Fetch-Site", "same-origin"); resp.StatusCode != http.StatusCreated {
 			t.Errorf("same-origin create = %d %s, want 201", resp.StatusCode, body)
+		}
+
+		// A page of the app asks whether it may post JSON, over REST and
+		// JSON-RPC: CORS answers, before the mux.
+		for _, target := range []string{"/links", "/rpc"} {
+			resp, body := s.do(t, "OPTIONS", target, "", "Origin", app,
+				"Access-Control-Request-Method", "POST", "Access-Control-Request-Headers", "content-type")
+			h := resp.Header
+			if resp.StatusCode != http.StatusNoContent || body != "" || h.Get("Access-Control-Allow-Origin") != app ||
+				h.Get("Access-Control-Allow-Methods") != "POST" || h.Get("Access-Control-Allow-Headers") != "content-type" ||
+				h.Get("Access-Control-Max-Age") != "3600" {
+				t.Errorf("preflight of %s = %d %v %q, want 204 with the headers of CORS", target, resp.StatusCode, h, body)
+			}
+		}
+		// Then it posts, from another site: CSRF protection trusts the same
+		// origin, and the page may read the link and the request ID.
+		resp, body := s.do(t, "POST", "/links", `{"url":"https://go.dev","code":"go-dev"}`, "Origin", app, "Sec-Fetch-Site", "cross-site")
+		if h := resp.Header; resp.StatusCode != http.StatusCreated || h.Get("Access-Control-Allow-Origin") != app ||
+			h.Get("Access-Control-Expose-Headers") != "Location, X-Request-ID" || h.Get("Vary") != "Origin" {
+			t.Errorf("create from the app = %d %v %s, want 201 that the app may read", resp.StatusCode, h, body)
+		}
+
+		// A page of another site may do neither.
+		const forbidden = `{"type":"about:blank","title":"Forbidden","status":403}`
+		resp, body = s.do(t, "OPTIONS", "/links", "", "Origin", "https://evil.example", "Access-Control-Request-Method", "POST")
+		if resp.StatusCode != http.StatusForbidden || body != forbidden || resp.Header.Get("Access-Control-Allow-Origin") != "" {
+			t.Errorf("preflight from another site = %d %v %s, want 403 %s", resp.StatusCode, resp.Header, body, forbidden)
+		}
+		resp, body = s.do(t, "POST", "/links", `{"url":"https://evil.example"}`, "Origin", "https://evil.example", "Sec-Fetch-Site", "cross-site")
+		if resp.StatusCode != http.StatusForbidden || body != forbidden || resp.Header.Get("Access-Control-Allow-Origin") != "" {
+			t.Errorf("create from another site = %d %v %s, want 403 %s", resp.StatusCode, resp.Header, body, forbidden)
+		}
+	})
+}
+
+func TestProbes(t *testing.T) {
+	// The balancers probe the service past its middleware: the probes get
+	// no request ID, and the access log has none of their records.
+	synctest.Test(t, func(t *testing.T) {
+		s := start(t)
+		for _, path := range []string{"/livez", "/readyz"} {
+			resp, body := s.do(t, "GET", path, "")
+			if resp.StatusCode != http.StatusOK || body != `{"status":"ok"}` || resp.Header.Get("X-Request-ID") != "" {
+				t.Errorf("GET %s = %d %v %s, want 200 {\"status\":\"ok\"} without a request ID", path, resp.StatusCode, resp.Header, body)
+			}
+		}
+		synctest.Wait()
+		if got := s.logs.get(); len(got) != 0 {
+			t.Errorf("logged %+v, want nothing", got)
+		}
+
+		// Another method goes through the middleware to the mux, where the
+		// path is that of a short link, which only GET follows.
+		resp, body := s.do(t, "POST", "/readyz", "")
+		const notAllowed = `{"type":"about:blank","title":"Method Not Allowed","status":405}`
+		if resp.StatusCode != http.StatusMethodNotAllowed || body != notAllowed || resp.Header.Get("X-Request-ID") == "" {
+			t.Errorf("POST /readyz = %d %v %s, want 405 %s with a request ID", resp.StatusCode, resp.Header, body, notAllowed)
 		}
 	})
 }
@@ -458,7 +522,8 @@ func TestInProcess(t *testing.T) {
 
 func TestShutdown(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
-	srv := newServer("", newAPI(links.New(store.New()), logger), nil, logger)
+	ready := health.NewReadiness()
+	srv := newServer("", newAPI(links.New(store.New()), logger), nil, nil, ready, logger)
 	// The signal comes from the handler: net/http drops a request it has
 	// read but not yet handled when Shutdown starts, so ConnState's
 	// StateActive would be too early.
@@ -477,7 +542,7 @@ func TestShutdown(t *testing.T) {
 	}
 	ctx, stop := context.WithCancel(t.Context())
 	served := make(chan error, 1)
-	go func() { served <- serve(ctx, srv, ln) }()
+	go func() { served <- serve(ctx, srv, ln, ready, 0) }()
 
 	// A request is in flight, half of its body sent, when the service is
 	// told to stop.
@@ -516,6 +581,120 @@ func TestShutdown(t *testing.T) {
 		t.Error("the service still accepts connections")
 	}
 }
+
+func TestDrain(t *testing.T) {
+	// Told to stop, the service fails readiness first and serves on for the
+	// drain, closing connections after their responses; only then it
+	// stops accepting connections.
+	synctest.Test(t, func(t *testing.T) {
+		logger := slog.New(slog.DiscardHandler)
+		ready := health.NewReadiness()
+		srv := newServer("", newAPI(links.New(store.New()), logger), nil, nil, ready, logger)
+		ln := newPipeListener()
+		ctx, stop := context.WithCancel(t.Context())
+		served := make(chan error, 1)
+		go func() { served <- serve(ctx, srv, ln, ready, 5*time.Second) }()
+
+		client := &http.Client{Transport: &http.Transport{DialContext: ln.dial}}
+		defer client.CloseIdleConnections()
+		// send sends a request and returns its status and whether the
+		// service closes the connection after it; 0 if it can't be sent.
+		send := func(method, target, body string) (int, bool) {
+			req, err := http.NewRequest(method, "http://shortlink.example"+target, strings.NewReader(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if body != "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			resp, err := client.Do(req)
+			if err != nil {
+				return 0, false
+			}
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+			return resp.StatusCode, resp.Close
+		}
+		if status, closed := send("GET", "/readyz", ""); status != http.StatusOK || closed {
+			t.Errorf("readiness = %d, closed %v; want 200 on a connection kept alive", status, closed)
+		}
+
+		stop()
+		synctest.Wait()
+		start := time.Now()
+		for _, at := range []time.Duration{0, 4 * time.Second} {
+			time.Sleep(at - time.Since(start))
+			if status, _ := send("GET", "/readyz", ""); status != http.StatusServiceUnavailable {
+				t.Errorf("readiness %v into the drain = %d, want 503", at, status)
+			}
+			if status, _ := send("GET", "/livez", ""); status != http.StatusOK {
+				t.Errorf("liveness %v into the drain = %d, want 200", at, status)
+			}
+			if status, closed := send("POST", "/links", `{"url":"https://go.dev"}`); status != http.StatusCreated || !closed {
+				t.Errorf("create %v into the drain = %d, closed %v; want 201 on a connection closed after it", at, status, closed)
+			}
+		}
+
+		if err := <-served; err != nil {
+			t.Errorf("serve() = %v, want <nil>", err)
+		}
+		if took := time.Since(start); took != 5*time.Second {
+			t.Errorf("serve() returned %v after the signal, want 5s", took)
+		}
+		if status, _ := send("GET", "/livez", ""); status != 0 {
+			t.Errorf("after the shutdown, liveness = %d, want no connection", status)
+		}
+	})
+}
+
+// pipeListener is a listener in memory, which a synctest bubble can serve
+// on: dial makes a net.Pipe and hands one end to Accept.
+type pipeListener struct {
+	conns  chan net.Conn
+	closed chan struct{}
+	close  sync.Once
+}
+
+func newPipeListener() *pipeListener {
+	return &pipeListener{conns: make(chan net.Conn), closed: make(chan struct{})}
+}
+
+func (l *pipeListener) Accept() (net.Conn, error) {
+	select {
+	case c := <-l.conns:
+		return c, nil
+	case <-l.closed:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l *pipeListener) Close() error {
+	l.close.Do(func() { close(l.closed) })
+	return nil
+}
+
+func (l *pipeListener) Addr() net.Addr {
+	return pipeAddr{}
+}
+
+// dial connects to the listener, as the DialContext of an http.Transport.
+func (l *pipeListener) dial(ctx context.Context, _, _ string) (net.Conn, error) {
+	server, client := net.Pipe()
+	select {
+	case l.conns <- server:
+		return client, nil
+	case <-l.closed:
+		return nil, errors.New("connection refused")
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// pipeAddr is the address of a pipeListener.
+type pipeAddr struct{}
+
+func (pipeAddr) Network() string { return "pipe" }
+func (pipeAddr) String() string  { return "pipe" }
 
 // logs is a slog.Handler that keeps the records it gets.
 type logs struct {

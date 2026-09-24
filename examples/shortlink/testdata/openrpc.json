@@ -30,7 +30,7 @@
         },
         {
           "name": "code",
-          "description": "The code of the link, of a-z, 0-9 and '-'. Without it, the link gets a random one.",
+          "description": "The code of the link, of a-z, 0-9 and '-', other than livez and readyz, the paths of the probes of the service. Without it, the link gets a random one.",
           "schema": {
             "type": "string",
             "minLength": 4,
@@ -57,6 +57,13 @@
           "message": "already exists",
           "data": {
             "kind": "already_exists"
+          }
+        },
+        {
+          "code": 504,
+          "message": "deadline exceeded",
+          "data": {
+            "kind": "deadline_exceeded"
           }
         }
       ],
@@ -124,6 +131,13 @@
           "data": {
             "kind": "not_found"
           }
+        },
+        {
+          "code": 504,
+          "message": "deadline exceeded",
+          "data": {
+            "kind": "deadline_exceeded"
+          }
         }
       ],
       "examples": [
@@ -186,6 +200,13 @@
           "message": "not found",
           "data": {
             "kind": "not_found"
+          }
+        },
+        {
+          "code": 504,
+          "message": "deadline exceeded",
+          "data": {
+            "kind": "deadline_exceeded"
           }
         }
       ],
@@ -261,6 +282,13 @@
           "data": {
             "kind": "not_found"
           }
+        },
+        {
+          "code": 504,
+          "message": "deadline exceeded",
+          "data": {
+            "kind": "deadline_exceeded"
+          }
         }
       ]
     },
@@ -312,6 +340,13 @@
           "message": "permission denied",
           "data": {
             "kind": "permission_denied"
+          }
+        },
+        {
+          "code": 504,
+          "message": "deadline exceeded",
+          "data": {
+            "kind": "deadline_exceeded"
           }
         }
       ],
