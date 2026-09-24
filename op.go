@@ -64,3 +64,17 @@ func define[Req, Res any](call, name string, opts []OpOption) Op[Req, Res] {
 func (o Op[Req, Res]) Name() string {
 	return o.name
 }
+
+// Example returns a copy of the contract with an example of a call for the
+// documentation of the operation: req and the result res that it gets. The
+// compiler checks their types, as it checks the handler and the calls of
+// clients:
+//
+//	var GetLink = tyr.Define[GetLinkReq, *Link]("links.get", rest.Route("GET /links/{code}")).
+//		Example("go", GetLinkReq{Code: "go"}, &Link{Code: "go", URL: "https://go.dev"})
+//
+// [API.Implement] checks the rest when the operation is registered, as it
+// does for the option [Example]. Example panics if the name is empty.
+func (o Op[Req, Res]) Example(name string, req Req, res Res) Op[Req, Res] {
+	return Op[Req, Res]{name: o.name, opts: append(slices.Clip(o.opts), Example(name, req, res))}
+}

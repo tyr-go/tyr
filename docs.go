@@ -1,0 +1,215 @@
+package tyr
+
+import (
+	"encoding/json/v2"
+	"errors"
+	"fmt"
+	"reflect"
+	"slices"
+
+	"github.com/tyr-go/tyr/internal/plan"
+)
+
+// Doc is the documentation of an operation, for the documents that
+// transports make of an API. The options [Summary], [Description], [Tags],
+// [Deprecated], [Errors] and [Example] set it, and it changes nothing at
+// run time; see [Operation.Doc].
+type Doc struct {
+	Summary     string
+	Description string   // in Markdown
+	Tags        []string // in the order added, without repeats
+	Deprecated  bool
+	// Errors are the kinds of errors that the operation may return, as
+	// declared, in the order added and without repeats. Transports add the
+	// kinds that any operation may return, such as KindInvalidArgument for
+	// a request that can't be decoded.
+	Errors   []Kind
+	Examples []ExampleCall
+}
+
+// ExampleCall is an example of a call of an operation: a request and the
+// result it gets.
+type ExampleCall struct {
+	Name string
+	Req  any // of the operation's Req type
+	Res  any // of the operation's Res type
+}
+
+// Info describes an API in the documents that transports make of it.
+type Info struct {
+	Title       string // required
+	Version     string // required: the version of the API, not of tyr
+	Description string // in Markdown
+}
+
+// The keys of the documentation; Operation.Doc reads them.
+var (
+	summaryKey     = NewMetaKey[string]("tyr.summary")
+	descriptionKey = NewMetaKey[string]("tyr.description")
+	tagsKey        = NewMetaKey[[]string]("tyr.tags")
+	deprecatedKey  = NewMetaKey[bool]("tyr.deprecated")
+	errorsKey      = NewMetaKey[[]Kind]("tyr.errors")
+	examplesKey    = NewMetaKey[[]example]("tyr.examples")
+)
+
+// example is an ExampleCall with the types it was made for.
+type example struct {
+	ExampleCall
+	req, res reflect.Type
+}
+
+// Summary sets a short summary of an operation, for its documentation. When
+// several options set it, the last one applied wins, as with a [MetaKey].
+func Summary(s string) OpOption {
+	return summaryKey.Option(s)
+}
+
+// Description sets the description of an operation, in Markdown, for its
+// documentation. When several options set it, the last one applied wins,
+// as with a [MetaKey].
+func Description(s string) OpOption {
+	return descriptionKey.Option(s)
+}
+
+// Deprecated marks an operation as deprecated in its documentation. The
+// operation still serves calls.
+func Deprecated() OpOption {
+	return deprecatedKey.Option(true)
+}
+
+// Tags adds tags to the documentation of an operation, by which documents
+// group operations. The tags add to those of the operation's groups, rather
+// than replace them. Tags panics if a tag is empty.
+func Tags(tags ...string) OpOption {
+	if slices.Contains(tags, "") {
+		panic("tyr: Tags: empty tag")
+	}
+	tags = slices.Clone(tags)
+	return func(op *Operation) {
+		cur, _ := tagsKey.Get(op)
+		tagsKey.Option(appendNew(cur, tags))(op)
+	}
+}
+
+// Errors declares, for the documentation of an operation, that it may
+// return errors of the kinds. The kinds add to those that the operation's
+// groups declare: a group whose interceptor requires a role may declare
+// [KindUnauthenticated] and [KindPermissionDenied], and each of its
+// operations the kinds of its own. Transports add the kinds that any
+// operation may return. Errors panics on a kind this package doesn't
+// define.
+func Errors(kinds ...Kind) OpOption {
+	for _, k := range kinds {
+		if !k.known() {
+			panic(fmt.Sprintf("tyr: Errors: unknown kind %v", k))
+		}
+	}
+	kinds = slices.Clone(kinds)
+	return func(op *Operation) {
+		cur, _ := errorsKey.Get(op)
+		errorsKey.Option(appendNew(cur, kinds))(op)
+	}
+}
+
+// appendNew returns a copy of s with the elements of add that it doesn't
+// have yet, in order.
+func appendNew[T comparable](s, add []T) []T {
+	out := slices.Clone(s)
+	for _, x := range add {
+		if !slices.Contains(out, x) {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+// Example adds an example of a call to the documentation of an operation:
+// req and the result res that it gets. The examples add to those of the
+// operation's groups. Example panics if the name is empty.
+//
+// Example is for [API.Handle]: an option can't be generic in the types of
+// its operation, so registration checks that req is a Req and res a Res,
+// and panics if they aren't. A contract has [Op.Example] instead, whose
+// types the compiler checks. Registration also panics if another example
+// of the operation has the name, if req fails the validate tags or the
+// Validate method of Req, or if req or res can't be encoded as JSON: an
+// example that the server would reject misleads its readers. The values
+// are kept as they are, not copied.
+func Example[Req, Res any](name string, req Req, res Res) OpOption {
+	if name == "" {
+		panic("tyr: Example: empty name")
+	}
+	ex := example{
+		Name: name, Req: req, Res: res,
+		req: reflect.TypeFor[Req](),
+		res: reflect.TypeFor[Res](),
+	}
+	return func(op *Operation) {
+		cur, _ := examplesKey.Get(op)
+		examplesKey.Option(append(slices.Clip(cur), ex))(op)
+	}
+}
+
+// Doc returns the documentation of the operation, which options set; see
+// [Doc]. Its slices are shared by all calls and must not be changed.
+func (op *Operation) Doc() Doc {
+	var d Doc
+	d.Summary, _ = summaryKey.Get(op)
+	d.Description, _ = descriptionKey.Get(op)
+	d.Tags, _ = tagsKey.Get(op)
+	d.Deprecated, _ = deprecatedKey.Get(op)
+	d.Errors, _ = errorsKey.Get(op)
+	examples, _ := examplesKey.Get(op)
+	for _, ex := range examples {
+		d.Examples = append(d.Examples, ex.ExampleCall)
+	}
+	return d
+}
+
+// checkExamples reports what's wrong with the examples of op, if anything,
+// as described at Example. validation is that of Req, if it has any.
+func checkExamples[Req any](op *Operation, validation *plan.Validation) error {
+	examples, _ := examplesKey.Get(op)
+	names := make(map[string]bool, len(examples))
+	for _, ex := range examples {
+		switch {
+		case ex.req != op.req:
+			return fmt.Errorf("example %q: request is %v, want %v", ex.Name, ex.req, op.req)
+		case ex.res != op.res:
+			return fmt.Errorf("example %q: result is %v, want %v", ex.Name, ex.res, op.res)
+		case names[ex.Name]:
+			return fmt.Errorf("example %q: another example has the name", ex.Name)
+		}
+		names[ex.Name] = true
+
+		req := ex.Req.(Req)
+		if validation != nil {
+			if vs := validation.Validate(reflect.ValueOf(&req).Elem()); len(vs) > 0 {
+				return fmt.Errorf("example %q: the request fails validation: %s: %s", ex.Name, vs[0].Pointer, vs[0].Detail)
+			}
+		}
+		if v, ok := any(&req).(Validator); ok {
+			if err := v.Validate(); err != nil {
+				return fmt.Errorf("example %q: the request fails validation: %s", ex.Name, failure(err))
+			}
+		}
+		if _, err := json.Marshal(ex.Req); err != nil {
+			return fmt.Errorf("example %q: encoding the request: %w", ex.Name, err)
+		}
+		if _, err := json.Marshal(ex.Res); err != nil {
+			return fmt.Errorf("example %q: encoding the result: %w", ex.Name, err)
+		}
+	}
+	return nil
+}
+
+// failure describes an error of Validate: by its first violation, if it
+// has violations, or else by its text.
+func failure(err error) string {
+	if e, ok := errors.AsType[*Error](err); ok && e != nil {
+		if v, ok := e.Details.(Violations); ok && len(v) > 0 {
+			return v[0].Pointer + ": " + v[0].Detail
+		}
+	}
+	return err.Error()
+}

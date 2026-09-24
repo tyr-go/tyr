@@ -18,6 +18,18 @@
 // The compiler checks that the handler fits the contract, as it checks the
 // calls of clients. [API.Handle] is short for Implement(Define(...)).
 //
+// # Documentation
+//
+// Options document an operation for the documents that transports make of
+// an API, and change nothing at run time: [Summary], [Description], [Tags],
+// [Deprecated], [Errors], the kinds of the errors that it may return, and
+// [Example], a request and the result it gets. A contract carries its
+// documentation too, so the code and the documents share one source; the
+// compiler checks the types of the examples of [Op.Example]:
+//
+//	var GetLink = tyr.Define[GetLinkReq, *Link]("links.get", tyr.Summary("Get a link"), tyr.Errors(tyr.KindNotFound)).
+//		Example("go", GetLinkReq{Code: "go"}, &Link{Code: "go", URL: "https://go.dev"})
+//
 // # Validation
 //
 // [Operation.Call] checks a request against the validate tags of its
@@ -269,6 +281,9 @@ func register[Req, Res any](a *API, call string, def Op[Req, Res], h Handler[Req
 			panic("tyr: " + call + ": nil option") // of a group: Define checked its own
 		}
 		opt(op)
+	}
+	if err := checkExamples[Req](op, validation); err != nil {
+		panic("tyr: " + call + ": " + err.Error())
 	}
 	op.registered = true
 	a.names[def.name] = true
