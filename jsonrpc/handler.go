@@ -71,13 +71,15 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if v.Kind() != '[' {
-		c := h.parse(v)
+		one := new(single)
+		c := &one.call
+		h.parse(v, &one.req, c)
 		h.record(r, c.op)
 		var o outcome
 		if c.op != nil {
-			o = h.call(r.Context(), &c)
+			o = h.call(r.Context(), c)
 		}
-		if res := h.respond(c, o); res != nil {
+		if res := h.respond(*c, o); res != nil {
 			h.write(r.Context(), w, res)
 			return
 		}
@@ -101,7 +103,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	calls := make([]call, len(batch))
 	discovered := false
 	for i, v := range batch {
-		calls[i] = h.parse(v)
+		var req members
+		h.parse(v, &req, &calls[i])
 		// A batch gets the document once, so that a small request can't
 		// ask for many copies of it.
 		if c := &calls[i]; c.discover && c.id != nil {
@@ -133,22 +136,34 @@ func (h *handler) record(r *http.Request, op *tyr.Operation) {
 	}
 }
 
-// parse checks v as a request object and finds its operation.
-func (h *handler) parse(v jsontext.Value) call {
-	var req struct {
-		JSONRPC jsontext.Value `json:"jsonrpc"`
-		Method  jsontext.Value `json:"method"`
-		Params  jsontext.Value `json:"params"`
-		ID      jsontext.Value `json:"id"`
-	}
+// members are the members of a request object, raw.
+type members struct {
+	JSONRPC jsontext.Value `json:"jsonrpc"`
+	Method  jsontext.Value `json:"method"`
+	Params  jsontext.Value `json:"params"`
+	ID      jsontext.Value `json:"id"`
+}
+
+// single is a request of a single call, whose call goes into the context
+// of its operation (see CallFrom): in the allocation of the members, which
+// json.Unmarshal makes anyway, it needs none of its own.
+type single struct {
+	req  members
+	call call
+}
+
+// parse checks v as a request object, reading its members into req, and
+// makes c of it, with its operation.
+func (h *handler) parse(v jsontext.Value, req *members, c *call) {
 	// Any valid JSON object decodes: the members are raw values.
-	if v.Kind() != '{' || json.Unmarshal(v, &req) != nil {
-		return call{id: null, err: invalidRequest()}
+	if v.Kind() != '{' || json.Unmarshal(v, req) != nil {
+		*c = call{id: null, err: invalidRequest()}
+		return
 	}
 	var jsonrpc, method string
 	ok := json.Unmarshal(req.JSONRPC, &jsonrpc) == nil && jsonrpc == version &&
 		req.Method.Kind() == '"' && json.Unmarshal(req.Method, &method) == nil
-	c := call{id: req.ID}
+	*c = call{id: req.ID}
 	switch req.ID.Kind() {
 	case 0, '"', '0', 'n': // none, a string, a number or null
 	default:
@@ -171,7 +186,7 @@ func (h *handler) parse(v jsontext.Value) call {
 			c.id = null // an invalid request object is no notification
 		}
 		c.params, c.err = nil, invalidRequest()
-		return c
+		return
 	}
 	if c.op = h.ops[method]; c.op == nil {
 		c.params = nil
@@ -181,7 +196,6 @@ func (h *handler) parse(v jsontext.Value) call {
 			c.err = methodNotFound()
 		}
 	}
-	return c
 }
 
 // isEmptyArray reports whether v, a valid JSON array, has no elements.
@@ -199,8 +213,9 @@ type CallInfo struct {
 	ID jsontext.Value
 }
 
-// callKey is the key of the call of a context. A pointer, to a call that a
-// batch holds anyway, costs no allocation beside the context.
+// callKey is the key of the call of a context. A pointer, to a call that
+// the handler has in an allocation anyway, the slice of a batch or the
+// members of a single call, costs no allocation beside the context.
 var callKey = ctxkey.New[*call]("jsonrpc.call")
 
 // CallFrom returns the call of JSON-RPC that ctx, the context of an
