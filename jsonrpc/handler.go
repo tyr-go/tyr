@@ -98,8 +98,17 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	calls := make([]call, len(batch))
+	discovered := false
 	for i, v := range batch {
 		calls[i] = h.parse(v)
+		// A batch gets the document once, so that a small request can't
+		// ask for many copies of it.
+		if c := &calls[i]; c.discover && c.id != nil {
+			if discovered {
+				c.discover, c.err = false, discoverAgain()
+			}
+			discovered = true
+		}
 	}
 	outcomes := h.callAll(r.Context(), calls)
 	var responses []*response

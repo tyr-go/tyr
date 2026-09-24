@@ -97,6 +97,27 @@ func TestDiscover(t *testing.T) {
 	if rec := post(h, `{"jsonrpc":"2.0","method":"rpc.discover"}`); rec.Code != http.StatusNoContent || rec.Body.Len() != 0 {
 		t.Errorf("notification = %d %s, want 204", rec.Code, rec.Body)
 	}
+
+	// A batch gets the document once, whatever it asks: a small request
+	// can't ask for many copies of it. A notification doesn't count.
+	rec = post(h, `[{"jsonrpc":"2.0","method":"rpc.discover"},`+
+		`{"jsonrpc":"2.0","method":"rpc.discover","id":"a"},`+
+		`{"jsonrpc":"2.0","method":"rpc.discover","id":"b"},`+
+		`{"jsonrpc":"2.0","method":"links.purge","params":{"host":"go.dev"},"id":"c"},`+
+		`{"jsonrpc":"2.0","method":"rpc.discover","id":"d"}]`)
+	var answers []struct {
+		Result jsontext.Value `json:"result"`
+		Error  jsontext.Value `json:"error"`
+		ID     string         `json:"id"`
+	}
+	const again = `{"code":-32600,"message":"Invalid Request: rpc.discover is answered once per batch"}`
+	if err := json.Unmarshal(rec.Body.Bytes(), &answers); err != nil || len(answers) != 4 ||
+		answers[0].ID != "a" || answers[0].Result.Kind() != '{' ||
+		answers[1].ID != "b" || string(answers[1].Error) != again ||
+		answers[2].ID != "c" || string(answers[2].Result) != `{"purged":0}` ||
+		answers[3].ID != "d" || string(answers[3].Error) != again {
+		t.Errorf("batch = %s, want the document once, the result of links.purge and %s twice", rec.Body, again)
+	}
 }
 
 func TestDiscoverOff(t *testing.T) {

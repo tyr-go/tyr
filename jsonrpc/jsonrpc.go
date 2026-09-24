@@ -43,7 +43,8 @@
 //   - -32700 Parse error: the body isn't valid JSON, as encoding/json/v2
 //     has it: duplicate names and invalid UTF-8 count too
 //   - -32600 Invalid Request: a value that isn't a valid request object,
-//     an empty batch or one over the limit
+//     an empty batch, one over the limit, and an rpc.discover of a batch
+//     that has had one
 //   - -32601 Method not found: no operation has the name; those that
 //     start with "rpc." are reserved
 //
@@ -155,7 +156,9 @@ func MaxBodyBytes(n int64) HandlerOption {
 // The document is made once, by Handler, which panics on a type of a
 // request or a result with a field that JSON can't carry, such as a
 // time.Duration. rpc.discover isn't an operation: the interceptors don't
-// see it, and its params are ignored. Without Discover, it is a method
+// see it, and its params are ignored. A batch gets the document once: a
+// second rpc.discover in it gets -32600 Invalid Request, so that a small
+// request can't ask for many copies of it. Without Discover, it is a method
 // that doesn't exist, as any other name that starts with "rpc.". Discover
 // panics if info has no Title or Version.
 func Discover(info tyr.Info) HandlerOption {

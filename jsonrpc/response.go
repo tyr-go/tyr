@@ -61,6 +61,14 @@ func methodNotFound() *errorObject {
 	return &errorObject{Code: codeMethodNotFound, Message: "Method not found"}
 }
 
+// discoverAgain returns the error of an rpc.discover of a batch that has
+// had one already.
+func discoverAgain() *errorObject {
+	e := invalidRequest()
+	e.Message += ": rpc.discover is answered once per batch"
+	return e
+}
+
 // internalError returns the error of an internal error, which tells the
 // client nothing more.
 func internalError() *errorObject {
