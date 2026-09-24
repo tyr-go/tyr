@@ -12,8 +12,8 @@ import (
 
 // Doc is the documentation of an operation, for the documents that
 // transports make of an API. The options [Summary], [Description], [Tags],
-// [Deprecated], [Errors] and [Example] set it, and it changes nothing at
-// run time; see [Operation.Doc].
+// [Deprecated] and [Errors] set it, and so do the examples of
+// [Contract.Example]; it changes nothing at run time. See [Operation.Doc].
 type Doc struct {
 	Summary     string
 	Description string   // in Markdown
@@ -49,14 +49,8 @@ var (
 	tagsKey        = NewMetaKey[[]string]("tyr.tags")
 	deprecatedKey  = NewMetaKey[bool]("tyr.deprecated")
 	errorsKey      = NewMetaKey[[]Kind]("tyr.errors")
-	examplesKey    = NewMetaKey[[]example]("tyr.examples")
+	examplesKey    = NewMetaKey[[]ExampleCall]("tyr.examples")
 )
-
-// example is an ExampleCall with the types it was made for.
-type example struct {
-	ExampleCall
-	req, res reflect.Type
-}
 
 // Summary sets a short summary of an operation, for its documentation. When
 // several options set it, the last one applied wins, as with a [MetaKey].
@@ -123,27 +117,14 @@ func appendNew[T comparable](s, add []T) []T {
 	return out
 }
 
-// Example adds an example of a call to the documentation of an operation:
-// req and the result res that it gets. The examples add to those of the
-// operation's groups. Example panics if the name is empty.
-//
-// Example is for [API.Handle]: an option can't be generic in the types of
-// its operation, so registration checks that req is a Req and res a Res,
-// and panics if they aren't. A contract has [Op.Example] instead, whose
-// types the compiler checks. Registration also panics if another example
-// of the operation has the name, if req fails the validate tags or the
-// Validate method of Req, or if req or res can't be encoded as JSON: an
-// example that the server would reject misleads its readers. The values
-// are kept as they are, not copied.
-func Example[Req, Res any](name string, req Req, res Res) OpOption {
+// exampleOption returns the option of Contract.Example: it adds an example
+// of a call to the documentation of an operation. It panics if the name is
+// empty.
+func exampleOption[Req, Res any](name string, req Req, res Res) OpOption {
 	if name == "" {
 		panic("tyr: Example: empty name")
 	}
-	ex := example{
-		Name: name, Req: req, Res: res,
-		req: reflect.TypeFor[Req](),
-		res: reflect.TypeFor[Res](),
-	}
+	ex := ExampleCall{Name: name, Req: req, Res: res}
 	return func(op *Operation) {
 		cur, _ := examplesKey.Get(op)
 		examplesKey.Option(append(slices.Clip(cur), ex))(op)
@@ -159,25 +140,18 @@ func (op *Operation) Doc() Doc {
 	d.Tags, _ = tagsKey.Get(op)
 	d.Deprecated, _ = deprecatedKey.Get(op)
 	d.Errors, _ = errorsKey.Get(op)
-	examples, _ := examplesKey.Get(op)
-	for _, ex := range examples {
-		d.Examples = append(d.Examples, ex.ExampleCall)
-	}
+	d.Examples, _ = examplesKey.Get(op)
 	return d
 }
 
 // checkExamples reports what's wrong with the examples of op, if anything,
-// as described at Example. validation is that of Req, if it has any.
+// as described at Contract.Example. validation is that of Req, if it has
+// any. Only Contract.Example adds examples, so they have the types of op.
 func checkExamples[Req any](op *Operation, validation *plan.Validation) error {
 	examples, _ := examplesKey.Get(op)
 	names := make(map[string]bool, len(examples))
 	for _, ex := range examples {
-		switch {
-		case ex.req != op.req:
-			return fmt.Errorf("example %q: request is %v, want %v", ex.Name, ex.req, op.req)
-		case ex.res != op.res:
-			return fmt.Errorf("example %q: result is %v, want %v", ex.Name, ex.res, op.res)
-		case names[ex.Name]:
+		if names[ex.Name] {
 			return fmt.Errorf("example %q: another example has the name", ex.Name)
 		}
 		names[ex.Name] = true

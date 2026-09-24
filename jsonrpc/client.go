@@ -92,9 +92,10 @@ func NewClient(endpoint string, hc *http.Client) *Client {
 	return &Client{endpoint: endpoint, hc: hc}
 }
 
-// Call calls the operation that op defines with req and returns its
-// result. It sends one request object, whose method is the name of op and
-// whose params are req in JSON, and decodes the result into a Res. The
+// Call calls the operation that contract defines with req and returns its
+// result. It sends one request object, whose method is the name of the
+// operation and whose params are req in JSON, and decodes the result into a
+// Res. The
 // request ID of ctx, see [tyr.RequestIDFrom], goes in the X-Request-ID
 // header, if it is 1 to 128 characters of [A-Za-z0-9._:-], as the
 // middleware.RequestID of the next service requires.
@@ -123,13 +124,13 @@ func NewClient(endpoint string, hc *http.Client) *Client {
 //     response to the call and a result that doesn't decode into a Res
 //     are errors of their own
 //
-// Call wraps these errors with the name of op; [errors.AsType] finds them
-// in it. It also fails for the zero Op, which has no name.
-func (c *Client) Call[Req, Res any](ctx context.Context, op tyr.Op[Req, Res], req Req) (Res, error) {
+// Call wraps these errors with the name of the operation; [errors.AsType]
+// finds them in it. It also fails for the zero Contract, which has no name.
+func (c *Client) Call[Req, Res any](ctx context.Context, contract tyr.Contract[Req, Res], req Req) (Res, error) {
 	var res Res
-	name := op.Name()
+	name := contract.Name()
 	if name == "" {
-		return res, errors.New("jsonrpc: Call: zero Op, make one with tyr.Define")
+		return res, errors.New("jsonrpc: Call: zero Contract, make one with tyr.Define")
 	}
 	id := c.ids.Add(1)
 	body, err := json.Marshal(request[Req]{JSONRPC: version, Method: name, Params: req, ID: id})

@@ -541,12 +541,12 @@ func TestClientCanceledLeaksNothing(t *testing.T) {
 	}
 }
 
-func TestClientZeroOp(t *testing.T) {
+func TestClientZeroContract(t *testing.T) {
 	c := newClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Error("the zero Op was sent")
+		t.Error("the zero Contract was sent")
 	}))
-	const want = "jsonrpc: Call: zero Op, make one with tyr.Define"
-	if _, err := c.Call(t.Context(), tyr.Op[thing, thing]{}, thing{}); err == nil || err.Error() != want {
+	const want = "jsonrpc: Call: zero Contract, make one with tyr.Define"
+	if _, err := c.Call(t.Context(), tyr.Contract[thing, thing]{}, thing{}); err == nil || err.Error() != want {
 		t.Errorf("Call() = %v, want %s", err, want)
 	}
 }

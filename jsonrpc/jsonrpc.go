@@ -104,8 +104,8 @@ const (
 // concurrency is the number of the calls of a batch that run at a time.
 const concurrency = 8
 
-// Option configures a [Handler].
-type Option func(*config)
+// HandlerOption configures a [Handler].
+type HandlerOption func(*config)
 
 // config is the configuration of a Handler.
 type config struct {
@@ -117,7 +117,7 @@ type config struct {
 // MaxBatch limits a batch to n calls, 50 by default: a larger batch gets a
 // single error, -32600 Invalid Request, and none of its calls run.
 // MaxBatch panics if n isn't positive.
-func MaxBatch(n int) Option {
+func MaxBatch(n int) HandlerOption {
 	if n <= 0 {
 		panic(fmt.Sprintf("jsonrpc: MaxBatch(%d): want a positive number of calls", n))
 	}
@@ -129,7 +129,7 @@ func MaxBatch(n int) Option {
 // the whole request, all the calls of a batch together, unlike that of
 // [github.com/tyr-go/tyr/rest.MaxBodyBytes], which is set per operation.
 // MaxBodyBytes panics if n isn't positive.
-func MaxBodyBytes(n int64) Option {
+func MaxBodyBytes(n int64) HandlerOption {
 	if n <= 0 {
 		panic(fmt.Sprintf("jsonrpc: MaxBodyBytes(%d): want a positive size", n))
 	}
@@ -156,7 +156,7 @@ func MaxBodyBytes(n int64) Option {
 // see it, and its params are ignored. Without Discover, it is a method
 // that doesn't exist, as any other name that starts with "rpc.". Discover
 // panics if info has no Title or Version.
-func Discover(info tyr.Info) Option {
+func Discover(info tyr.Info) HandlerOption {
 	if info.Title == "" || info.Version == "" {
 		panic("jsonrpc: Discover: the Info needs a Title and a Version")
 	}
@@ -167,7 +167,7 @@ func Discover(info tyr.Info) Option {
 // JSON-RPC 2.0, configured by opts. It serves the operations api has at
 // the time: registering one after Handler panics, as for a sealed API.
 // Handler panics if api or an option is nil.
-func Handler(api *tyr.API, opts ...Option) http.Handler {
+func Handler(api *tyr.API, opts ...HandlerOption) http.Handler {
 	if api == nil {
 		panic("jsonrpc: Handler: nil API")
 	}

@@ -22,10 +22,10 @@
 //
 // Options document an operation for the documents that transports make of
 // an API, and change nothing at run time: [Summary], [Description], [Tags],
-// [Deprecated], [Errors], the kinds of the errors that it may return, and
-// [Example], a request and the result it gets. A contract carries its
-// documentation too, so the code and the documents share one source; the
-// compiler checks the types of the examples of [Op.Example]:
+// [Deprecated] and [Errors], the kinds of the errors that it may return.
+// A contract carries its documentation too, so the code and the documents
+// share one source, and [Contract.Example] adds examples of calls, a request
+// and the result it gets, whose types the compiler checks:
 //
 //	var GetLink = tyr.Define[GetLinkReq, *Link]("links.get", tyr.Summary("Get a link"), tyr.Errors(tyr.KindNotFound)).
 //		Example("go", GetLinkReq{Code: "go"}, &Link{Code: "go", URL: "https://go.dev"})
@@ -51,6 +51,14 @@
 // [Violation], with the JSON Pointer of the field; the violations come in
 // the order of the fields. An unknown rule, a rule that doesn't apply to
 // the type of its field, or a bad parameter makes [API.Handle] panic.
+//
+// # For transports
+//
+// A transport serves the operations of an API; handlers and interceptors
+// don't need these. It seals the API with [API.Seal] when it mounts it,
+// runs every request with [Operation.Call], keeps the operation in the
+// context beyond the call with [WithOperation], and records what served a
+// request with [RequestInfo.Record], which it finds with [RequestInfoFrom].
 package tyr
 
 import (
@@ -141,26 +149,28 @@ func (a *API) MapError(fn func(error) error) {
 // be valid; see the package documentation.
 //
 // opts configure the operation, e.g. with a route for a transport, and
-// apply in order. Handle panics if the name is invalid or already taken,
-// h or an option is nil, Req isn't a struct or has an invalid validate
-// tag, Req has no Validate method because those of structs it embeds
-// conflict (see [Validator]), or the API is sealed.
+// apply in order; examples of calls for its documentation need a contract,
+// see [Contract.Example]. Handle panics if the name is invalid or already
+// taken, h or an option is nil, Req isn't a struct or has an invalid
+// validate tag, Req has no Validate method because those of structs it
+// embeds conflict (see [Validator]), or the API is sealed.
 func (a *API) Handle[Req, Res any](name string, h Handler[Req, Res], opts ...OpOption) *Operation {
 	call := fmt.Sprintf("Handle(%q)", name)
 	return register(a, call, define[Req, Res](call, name, opts), h, nil)
 }
 
-// Implement registers h as the handler of the operation that op defines,
-// with the options of op, and returns the operation. The compiler checks
-// that h fits op, so an implementation can't drift from the contract its
+// Implement registers h as the handler of the operation that c defines,
+// with the options of c, and returns the operation. The compiler checks
+// that h fits c, so an implementation can't drift from the contract its
 // clients call.
 //
-// Implement panics if op is the zero Op, its name is already taken, h is
-// nil, Req has an invalid validate tag or no Validate method because those
-// of structs it embeds conflict (see [Validator]), or the API is sealed.
-// [Define] has checked the rest.
-func (a *API) Implement[Req, Res any](op Op[Req, Res], h Handler[Req, Res]) *Operation {
-	return implement(a, op, h, nil)
+// Implement panics if c is the zero Contract, its name is already taken, h
+// is nil, Req has an invalid validate tag or no Validate method because
+// those of structs it embeds conflict (see [Validator]), an example of c
+// doesn't fit (see [Contract.Example]), or the API is sealed. [Define] has
+// checked the rest.
+func (a *API) Implement[Req, Res any](c Contract[Req, Res], h Handler[Req, Res]) *Operation {
+	return implement(a, c, h, nil)
 }
 
 // Group returns a group whose operations get opts before their own
@@ -238,9 +248,9 @@ func (g *Group) Handle[Req, Res any](name string, h Handler[Req, Res], opts ...O
 }
 
 // Implement is like [API.Implement] but applies the group's options before
-// those of op.
-func (g *Group) Implement[Req, Res any](op Op[Req, Res], h Handler[Req, Res]) *Operation {
-	return implement(g.api, op, h, g.opts)
+// those of c.
+func (g *Group) Implement[Req, Res any](c Contract[Req, Res], h Handler[Req, Res]) *Operation {
+	return implement(g.api, c, h, g.opts)
 }
 
 // Group returns a nested group, whose options go after g's.
@@ -249,16 +259,16 @@ func (g *Group) Group(opts ...OpOption) *Group {
 }
 
 // implement implements API.Implement and Group.Implement.
-func implement[Req, Res any](a *API, def Op[Req, Res], h Handler[Req, Res], groupOpts []OpOption) *Operation {
+func implement[Req, Res any](a *API, def Contract[Req, Res], h Handler[Req, Res], groupOpts []OpOption) *Operation {
 	if def.name == "" {
-		panic("tyr: Implement: zero Op, make one with Define")
+		panic("tyr: Implement: zero Contract, make one with Define")
 	}
 	return register(a, fmt.Sprintf("Implement(%q)", def.name), def, h, groupOpts)
 }
 
-// register registers h as the handler of def, a checked Op, with groupOpts
-// before the options of def; call names the call in panics.
-func register[Req, Res any](a *API, call string, def Op[Req, Res], h Handler[Req, Res], groupOpts []OpOption) *Operation {
+// register registers h as the handler of def, a checked Contract, with
+// groupOpts before the options of def; call names the call in panics.
+func register[Req, Res any](a *API, call string, def Contract[Req, Res], h Handler[Req, Res], groupOpts []OpOption) *Operation {
 	a.checkOpen(call)
 	if a.names[def.name] {
 		panic("tyr: " + call + ": duplicate operation name")

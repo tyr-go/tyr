@@ -18,22 +18,21 @@ func TestDoc(t *testing.T) {
 		t.Errorf("Doc() without options = %+v, want the zero Doc", got)
 	}
 
-	// Summary, Description and Deprecated: the last one wins. Tags, Errors
-	// and Example add to those of the groups, without repeats.
+	// Summary, Description and Deprecated: the last one wins. Tags and
+	// Errors add to those of the groups, without repeats.
 	admin := api.Group(
 		tyr.Summary("An admin operation"),
 		tyr.Tags("admin"),
 		tyr.Errors(tyr.KindUnauthenticated, tyr.KindPermissionDenied),
-		tyr.Example("admin", getLinkReq{Code: "admin"}, &link{Code: "admin", URL: "https://go.dev/admin"}),
 	)
 	audited := admin.Group(tyr.Tags("audit", "admin"), tyr.Deprecated())
-	op := audited.Handle("links.purge", getLink,
+	purge := tyr.Define[getLinkReq, *link]("links.purge",
 		tyr.Summary("Purge links"),
 		tyr.Description("Deletes the links to a *host*."),
 		tyr.Tags("links"),
 		tyr.Errors(tyr.KindNotFound, tyr.KindUnauthenticated),
-		tyr.Example("go", getLinkReq{Code: "go"}, &link{Code: "go", URL: "https://go.dev/go"}),
-	)
+	).Example("go", getLinkReq{Code: "go"}, &link{Code: "go", URL: "https://go.dev/go"})
+	op := audited.Implement(purge, getLink)
 	want := tyr.Doc{
 		Summary:     "Purge links",
 		Description: "Deletes the links to a *host*.",
@@ -41,7 +40,6 @@ func TestDoc(t *testing.T) {
 		Deprecated:  true,
 		Errors:      []tyr.Kind{tyr.KindUnauthenticated, tyr.KindPermissionDenied, tyr.KindNotFound},
 		Examples: []tyr.ExampleCall{
-			{Name: "admin", Req: getLinkReq{Code: "admin"}, Res: &link{Code: "admin", URL: "https://go.dev/admin"}},
 			{Name: "go", Req: getLinkReq{Code: "go"}, Res: &link{Code: "go", URL: "https://go.dev/go"}},
 		},
 	}
@@ -50,12 +48,12 @@ func TestDoc(t *testing.T) {
 	}
 
 	// The operations of a group don't share what they add.
-	if got := admin.Handle("links.stats", getLink).Doc(); !reflect.DeepEqual(got.Tags, []string{"admin"}) || got.Deprecated || len(got.Examples) != 1 {
+	if got := admin.Handle("links.stats", getLink).Doc(); !reflect.DeepEqual(got.Tags, []string{"admin"}) || got.Deprecated || len(got.Examples) != 0 {
 		t.Errorf("Doc() of another operation of the group = %+v, want only the group's", got)
 	}
 }
 
-func TestOpExample(t *testing.T) {
+func TestContractExample(t *testing.T) {
 	get := tyr.Define[getLinkReq, *link]("links.get", tyr.Summary("Get a link")).
 		Example("go", getLinkReq{Code: "go"}, &link{Code: "go", URL: "https://go.dev/go"})
 	more := get.Example("rust", getLinkReq{Code: "rust"}, nil) // a copy: get keeps one example
@@ -118,34 +116,17 @@ func TestDocPanics(t *testing.T) {
 		},
 		{
 			name: "example without a name",
-			f:    func(api *tyr.API) { tyr.Example("", getLinkReq{}, &link{}) },
-			want: "tyr: Example: empty name",
-		},
-		{
-			name: "contract example without a name",
 			f:    func(api *tyr.API) { tyr.Define[getLinkReq, *link]("links.get").Example("", getLinkReq{}, nil) },
 			want: "tyr: Example: empty name",
 		},
 		{
-			name: "request of another type",
+			name: "name taken",
 			f: func(api *tyr.API) {
-				api.Handle("links.get", getLink, tyr.Example("go", createReq{URL: "https://go.dev"}, &link{}))
+				api.Implement(tyr.Define[getLinkReq, *link]("links.get").
+					Example("go", getLinkReq{Code: "go"}, nil).
+					Example("go", getLinkReq{Code: "golang"}, nil), getLink)
 			},
-			want: `tyr: Handle("links.get"): example "go": request is tyr_test.createReq, want tyr_test.getLinkReq`,
-		},
-		{
-			name: "result of another type",
-			f: func(api *tyr.API) {
-				api.Handle("links.get", getLink, tyr.Example("go", getLinkReq{Code: "go"}, link{}))
-			},
-			want: `tyr: Handle("links.get"): example "go": result is tyr_test.link, want *tyr_test.link`,
-		},
-		{
-			name: "name taken in a group",
-			f: func(api *tyr.API) {
-				api.Group(tyr.Example("go", getLinkReq{}, &link{})).Handle("links.get", getLink, tyr.Example("go", getLinkReq{}, &link{}))
-			},
-			want: `tyr: Handle("links.get"): example "go": another example has the name`,
+			want: `tyr: Implement("links.get"): example "go": another example has the name`,
 		},
 		{
 			name: "request that fails a tag",
@@ -164,18 +145,18 @@ func TestDocPanics(t *testing.T) {
 		{
 			name: "request that fails Validate without violations",
 			f: func(api *tyr.API) {
-				api.Handle("numbers.half", func(ctx context.Context, req oddReq) (int, error) { return req.N / 2, nil },
-					tyr.Example("odd", oddReq{N: 3}, 1))
+				api.Implement(tyr.Define[oddReq, int]("numbers.half").Example("odd", oddReq{N: 3}, 1),
+					func(ctx context.Context, req oddReq) (int, error) { return req.N / 2, nil })
 			},
-			want: `tyr: Handle("numbers.half"): example "odd": the request fails validation: n must be even`,
+			want: `tyr: Implement("numbers.half"): example "odd": the request fails validation: n must be even`,
 		},
 		{
 			name: "result that can't be encoded",
 			f: func(api *tyr.API) {
-				api.Handle("numbers.sqrt", func(ctx context.Context, req oddReq) (float64, error) { return 0, nil },
-					tyr.Example("nan", oddReq{N: -2}, math.NaN()))
+				api.Implement(tyr.Define[oddReq, float64]("numbers.sqrt").Example("nan", oddReq{N: -2}, math.NaN()),
+					func(ctx context.Context, req oddReq) (float64, error) { return 0, nil })
 			},
-			want: `tyr: Handle("numbers.sqrt"): example "nan": encoding the result: ` + nan.Error(),
+			want: `tyr: Implement("numbers.sqrt"): example "nan": encoding the result: ` + nan.Error(),
 		},
 	}
 	for _, tt := range tests {

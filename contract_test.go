@@ -10,9 +10,9 @@ func TestDefine(t *testing.T) {
 	if got := tyr.Define[getLinkReq, *link]("links.get").Name(); got != "links.get" {
 		t.Errorf("Name() = %q, want %q", got, "links.get")
 	}
-	var zero tyr.Op[getLinkReq, *link]
+	var zero tyr.Contract[getLinkReq, *link]
 	if got := zero.Name(); got != "" {
-		t.Errorf("Name() of the zero Op = %q, want %q", got, "")
+		t.Errorf("Name() of the zero Contract = %q, want %q", got, "")
 	}
 }
 

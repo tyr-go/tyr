@@ -8,7 +8,7 @@ import (
 	"github.com/tyr-go/tyr"
 )
 
-func ExampleOp_Example() {
+func ExampleContract_Example() {
 	type GetLinkReq struct {
 		Code string `json:"code" validate:"required,min=2"`
 	}

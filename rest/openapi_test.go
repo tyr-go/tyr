@@ -66,14 +66,16 @@ func docAPI() *tyr.API {
 		docCreated{Code: "go-home", URL: "https://go.dev", CreatedAt: created, Location: "/links/go-home"},
 	), func(ctx context.Context, req docCreateReq) (docCreated, error) { return docCreated{}, nil })
 
-	api.Handle("links.get", func(ctx context.Context, req docGetReq) (*docLink, error) { return nil, nil },
+	api.Implement(tyr.Define[docGetReq, *docLink]("links.get",
 		rest.Route("GET /links/{code}"), tyr.Tags("links"), tyr.Errors(tyr.KindNotFound),
-		tyr.Example("go-home", docGetReq{Code: "go-home"}, &docLink{Code: "go-home", URL: "https://go.dev", CreatedAt: created}))
+	).Example("go-home", docGetReq{Code: "go-home"}, &docLink{Code: "go-home", URL: "https://go.dev", CreatedAt: created}),
+		func(ctx context.Context, req docGetReq) (*docLink, error) { return nil, nil })
 	api.Handle("links.list", func(ctx context.Context, req docListReq) ([]docLink, error) { return nil, nil },
 		rest.Route("GET /links"), tyr.Tags("links"))
-	api.Handle("links.follow", func(ctx context.Context, req docGetReq) (docFollowRes, error) { return docFollowRes{}, nil },
+	api.Implement(tyr.Define[docGetReq, docFollowRes]("links.follow",
 		rest.Route("GET /{code}"), rest.Status(http.StatusFound),
-		tyr.Example("go-home", docGetReq{Code: "go-home"}, docFollowRes{URL: "https://go.dev"}))
+	).Example("go-home", docGetReq{Code: "go-home"}, docFollowRes{URL: "https://go.dev"}),
+		func(ctx context.Context, req docGetReq) (docFollowRes, error) { return docFollowRes{}, nil })
 	api.Group(tyr.Errors(tyr.KindUnauthenticated, tyr.KindPermissionDenied)).Handle("links.delete",
 		func(ctx context.Context, req docGetReq) (struct{}, error) { return struct{}{}, nil },
 		rest.Route("DELETE /links/{code}"), tyr.Deprecated())

@@ -203,14 +203,14 @@ func TestImplementPanics(t *testing.T) {
 		want      string
 	}{
 		{
-			name:      "zero Op",
-			implement: func(api *tyr.API) { api.Implement(tyr.Op[getLinkReq, *link]{}, getLink) },
-			want:      "tyr: Implement: zero Op, make one with Define",
+			name:      "zero Contract",
+			implement: func(api *tyr.API) { api.Implement(tyr.Contract[getLinkReq, *link]{}, getLink) },
+			want:      "tyr: Implement: zero Contract, make one with Define",
 		},
 		{
-			name:      "zero Op in a group",
-			implement: func(api *tyr.API) { api.Group().Implement(tyr.Op[getLinkReq, *link]{}, getLink) },
-			want:      "tyr: Implement: zero Op, make one with Define",
+			name:      "zero Contract in a group",
+			implement: func(api *tyr.API) { api.Group().Implement(tyr.Contract[getLinkReq, *link]{}, getLink) },
+			want:      "tyr: Implement: zero Contract, make one with Define",
 		},
 		{
 			name: "duplicate name",

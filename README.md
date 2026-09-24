@@ -283,7 +283,7 @@ Any other error of `Call`, such as a failed connection or a 503 of a load balanc
 
 ### [Document an API](https://pkg.go.dev/github.com/tyr-go/tyr/rest#example-OpenAPI)
 
-The contract documents its operation too, so the code and the documents share one source: `Summary`, `Description`, `Tags`, `Errors` and examples by `Op.Example`, whose types the compiler checks; `doc` tags describe fields. REST serves an OpenAPI 3.1 document of the operations it serves, with the same options as `Mount`:
+The contract documents its operation too, so the code and the documents share one source: `Summary`, `Description`, `Tags`, `Errors` and examples by `Contract.Example`, whose types the compiler checks; `doc` tags describe fields. REST serves an OpenAPI 3.1 document of the operations it serves, with the same options as `Mount`:
 
 <!-- Output: rest.ExampleOpenAPI -->
 ```go

@@ -56,9 +56,9 @@ func docAPI() *tyr.API {
 	admin := api.Group(tyr.Tags("admin"), tyr.Errors(tyr.KindUnauthenticated, tyr.KindPermissionDenied))
 	admin.Handle("links.delete", func(ctx context.Context, req docGetReq) (struct{}, error) { return struct{}{}, nil },
 		tyr.Deprecated())
-	admin.Handle("links.purge", func(ctx context.Context, req docPurgeReq) (docPurged, error) { return docPurged{}, nil },
-		tyr.Summary("Purge the links to a host"),
-		tyr.Example("a host", docPurgeReq{Host: "example.com"}, docPurged{Purged: 2}))
+	admin.Implement(tyr.Define[docPurgeReq, docPurged]("links.purge", tyr.Summary("Purge the links to a host")).
+		Example("a host", docPurgeReq{Host: "example.com"}, docPurged{Purged: 2}),
+		func(ctx context.Context, req docPurgeReq) (docPurged, error) { return docPurged{}, nil })
 	return api
 }
 
