@@ -18,6 +18,7 @@ import (
 var readmePackages = map[string]string{
 	"tyr":        ".",
 	"ctxkey":     "ctxkey",
+	"health":     "health",
 	"jsonrpc":    "jsonrpc",
 	"middleware": "middleware",
 	"rest":       "rest",

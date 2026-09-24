@@ -65,7 +65,9 @@ tyr decodes the request, from the JSON body and then the fields tagged `path`, `
 - [Validation](https://pkg.go.dev/github.com/tyr-go/tyr#hdr-Validation) by tags in the syntax of go-playground/validator and by a `Validate` method
 - [Errors of kinds](https://pkg.go.dev/github.com/tyr-go/tyr#Kind): RFC 9457 problems over REST, error codes over JSON-RPC
 - [Interceptors](https://pkg.go.dev/github.com/tyr-go/tyr#Interceptor) with typed [metadata](https://pkg.go.dev/github.com/tyr-go/tyr#MetaKey) of operations, for authorization, metrics and tracing
-- [Middleware](https://pkg.go.dev/github.com/tyr-go/tyr/middleware): request IDs, access logs, recovery from panics
+- [Timeouts](https://pkg.go.dev/github.com/tyr-go/tyr#Timeout) of operations and groups, the same over REST, JSON-RPC and each call of a batch
+- [Middleware](https://pkg.go.dev/github.com/tyr-go/tyr/middleware): request IDs, access logs, recovery from panics, and [CORS](https://pkg.go.dev/github.com/tyr-go/tyr/middleware#CORS) that the protection against cross-site requests follows
+- [Health probes](https://pkg.go.dev/github.com/tyr-go/tyr/health): liveness, readiness with checks, and a drain before a graceful shutdown
 - [Logs](https://pkg.go.dev/github.com/tyr-go/tyr#NewLogHandler) with the request ID and the operation, through `log/slog`
 - The [route and the operation](https://pkg.go.dev/github.com/tyr-go/tyr#RequestInfo) of a request, for access logs and metrics
 - No dependencies but the standard library; routing by `http.ServeMux`
@@ -94,6 +96,7 @@ Týr, the Norse god of law and oaths, put his hand in Fenrir's jaws as the pledg
 - The API may change until v1.
 - JSON only, with `encoding/json/v2`. Forms, multipart and files go to plain handlers on the same mux.
 - Request and response only. Streaming, server-sent events and WebSockets go to plain handlers too, and consumers of event streams are out of scope.
+- Timeouts are cooperative: a handler must listen to its context, as a timeout doesn't cut it short. One that doesn't runs on, and the API logs a warning.
 - JSON-RPC takes params by name only.
 - Validation implements a subset of the tags of go-playground/validator, with the semantics of v10.30.5: `required`, `omitempty`, `min`, `max`, `len`, `gt`, `gte`, `lt`, `lte`, `oneof`, `email`, `url`, `http_url` and `uuid`, without `dive` and `|`. An unknown rule panics at startup. Rules between fields go in a `Validate` method; an adapter for all of go-playground is planned.
 - The typed client speaks JSON-RPC and sends one call per request; a REST client is planned.
@@ -207,6 +210,30 @@ rest.Mount(mux, api, rest.Challenge(`Bearer realm="links"`))
 // POST /links/purge with the admin's token
 // => 200 "purged"
 ```
+
+### [Limit the time of an operation](https://pkg.go.dev/github.com/tyr-go/tyr#example-Timeout)
+
+`tyr.Timeout` limits the calls of an operation, or of every operation of a group, the same over REST, JSON-RPC and each call of a batch. The handler gets a context that is done at the timeout, and it must listen to it: the timeout doesn't cut it short, and a handler that runs on gives its result to the client, as the work is done by then, with a warning in the log:
+
+<!-- Output: tyr.ExampleTimeout -->
+```go
+reports := api.Group(tyr.Timeout(10 * time.Millisecond))
+build := reports.Handle("reports.build", func(ctx context.Context, req buildReq) (*report, error) {
+	select {
+	case <-time.After(time.Minute): // the report takes a while
+		return &report{Total: 42}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+})
+
+// the error of a call: 504 over REST, the code 504 over JSON-RPC
+// => deadline_exceeded: deadline exceeded: context deadline exceeded
+// the kinds of errors in the documents of the operation
+// => declared: deadline_exceeded
+```
+
+A deadline of the context of a whole request, which middleware of your own may set, bounds a batch as a whole: the calls that haven't started by then fail with `deadline_exceeded` too.
 
 ### [Set headers and redirect](https://pkg.go.dev/github.com/tyr-go/tyr/rest#example-Status)
 
@@ -358,6 +385,52 @@ handler := middleware.Chain(mux, // first = outermost
 
 The records above leave out the time and the duration.
 
+### [Let the pages of other origins call the service](https://pkg.go.dev/github.com/tyr-go/tyr/middleware#example-CORS)
+
+`middleware.CORS` lists the origins whose pages may call the service from browsers. It answers preflight requests itself, before the mux, which would answer them with 405, and makes the protection against cross-site requests trust the same origins, which would reject their requests otherwise:
+
+<!-- Output: middleware.ExampleCORS -->
+```go
+cors := middleware.CORS{
+	Origins: []string{"https://app.example.com"},
+	Expose:  []string{"Location"},
+}
+handler := middleware.Chain(mux, cors.Handler, cors.CrossOriginProtection().Handler)
+
+// a page of the app asks whether it may post JSON, and posts it from another site
+// => OPTIONS from https://app.example.com: 204, allow origin "https://app.example.com", expose ""
+// => POST from https://app.example.com: 201, allow origin "https://app.example.com", expose "Location"
+// a page of another origin does the same
+// => OPTIONS from https://other.example.com: 403, allow origin "", expose ""
+// => POST from https://other.example.com: 403, allow origin "", expose ""
+```
+
+In a whole chain, CORS goes under Logger, which then logs preflight requests, and above Recover, whose 500 keeps its headers, so a page can read it.
+
+### [Probe liveness and readiness](https://pkg.go.dev/github.com/tyr-go/tyr/health#example-Readiness)
+
+Package `health` answers the probes of balancers. Readiness runs its checks in parallel, with a timeout, and tells statuses only: the errors go to the log. The probes go past the middleware, on an outer mux, as balancers call them every few seconds and the access log would drown in their records:
+
+<!-- Output: health.ExampleReadiness -->
+```go
+ready := health.NewReadiness(health.Check("db", db.PingContext))
+root := http.NewServeMux()
+root.Handle("GET /livez", health.Live())
+root.Handle("GET /readyz", ready)
+root.Handle("/", service)
+
+// GET /readyz while the database is down, then up
+// => /readyz 503 {"status":"failed","checks":{"db":"failed"}}
+// => /readyz 200 {"status":"ok","checks":{"db":"ok"}}
+
+// told to stop, the service drains: readiness fails while the server serves on
+ready.Drain(ctx, 5*time.Second)
+// => /readyz 503 {"status":"draining"}
+// => /livez 200 {"status":"ok"}
+```
+
+`srv.Shutdown` goes after the drain: it stops accepting connections at once, and the drain gives the balancers the time to take the traffic away first.
+
 ### [Measure requests by route and operation](https://pkg.go.dev/github.com/tyr-go/tyr#example-RequestInfo)
 
 Middleware above the transports gets the route and the operation of a request from a `tyr.RequestInfo`, which the transport fills in, even if middleware in between passes on another request. A batch has no single operation:
@@ -384,7 +457,7 @@ func metrics(next http.Handler) http.Handler {
 // => POST /rpc -
 ```
 
-A whole service, [`examples/shortlink`](examples/shortlink), is a URL shortener built on tyr the way a user would build it: an in-memory store, REST and JSON-RPC, a contract that documents it and that its tests call with the typed client, OpenAPI and OpenRPC documents, validation, `MapError`, authorization with an interceptor, middleware, graceful shutdown and end-to-end tests.
+A whole service, [`examples/shortlink`](examples/shortlink), is a URL shortener built on tyr the way a user would build it: an in-memory store, REST and JSON-RPC, a contract that documents it and that its tests call with the typed client, OpenAPI and OpenRPC documents, validation, `MapError`, authorization with an interceptor, timeouts, middleware with CORS, health probes past it, a graceful shutdown that drains first, and end-to-end tests.
 
 ## Middleware
 
@@ -392,11 +465,12 @@ A whole service, [`examples/shortlink`](examples/shortlink), is a URL shortener 
 |---|---|---|
 | [`middleware.RequestID`](https://pkg.go.dev/github.com/tyr-go/tyr/middleware#RequestID) | Keeps a valid `X-Request-ID` or makes a UUIDv7, and puts it in the response and the context | first |
 | [`middleware.Logger`](https://pkg.go.dev/github.com/tyr-go/tyr/middleware#Logger) | Writes a record per request: the method, the route, the operation, the status and the duration | under RequestID |
-| [`middleware.Recover`](https://pkg.go.dev/github.com/tyr-go/tyr/middleware#Recover) | Turns a panic into a 500 problem and logs it with the stack | under Logger |
-| [`http.CrossOriginProtection`](https://pkg.go.dev/net/http#CrossOriginProtection) | Rejects unsafe cross-origin requests, against CSRF; from the standard library | under Recover |
+| [`middleware.CORS`](https://pkg.go.dev/github.com/tyr-go/tyr/middleware#CORS) | Answers preflight requests and lets the pages of the origins it lists read the responses | under Logger |
+| [`middleware.Recover`](https://pkg.go.dev/github.com/tyr-go/tyr/middleware#Recover) | Turns a panic into a 500 problem and logs it with the stack | under Logger and CORS |
+| [`http.CrossOriginProtection`](https://pkg.go.dev/net/http#CrossOriginProtection) | Rejects unsafe cross-origin requests, against CSRF; from the standard library, or from `CORS.CrossOriginProtection` to trust the origins of CORS | under Recover |
 | [`rest.ProblemHandler`](https://pkg.go.dev/github.com/tyr-go/tyr/rest#ProblemHandler) | Makes the 404 and 405 of the mux problems, as the errors of operations are | around the mux |
 
-`middleware.Chain` applies them, the first outermost. Any `func(http.Handler) http.Handler` goes in the chain, those of the standard library too, and middleware of your own, such as authentication, may go under all of them.
+`middleware.Chain` applies them, the first outermost. Any `func(http.Handler) http.Handler` goes in the chain, those of the standard library too, and middleware of your own, such as authentication, may go under all of them. The probes of [`health`](https://pkg.go.dev/github.com/tyr-go/tyr/health) go past the chain, and timeouts are an option of operations, [`tyr.Timeout`](https://pkg.go.dev/github.com/tyr-go/tyr#Timeout), rather than middleware.
 
 ## Roadmap
 
@@ -405,7 +479,8 @@ A whole service, [`examples/shortlink`](examples/shortlink), is a URL shortener 
 - [x] v0.3: contracts (`Define`), a typed JSON-RPC client, an in-process client for tests
 - [x] v0.4: OpenAPI 3.1 and OpenRPC documents, with JSON Schemas of the same types; problem types of kinds
 - [x] v0.5: stable names of the schemas of the documents, and names of one's own by `SchemaName`
-- [ ] OpenTelemetry, timeouts, CORS and an adapter for all of go-playground/validator
+- [x] v0.6: timeouts of operations, CORS, and health probes with a drain before shutdown
+- [ ] OpenTelemetry and an adapter for all of go-playground/validator
 - [ ] Later: a REST client, a TypeScript client, NATS and MCP
 
 The API may change until v1.

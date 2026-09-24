@@ -16,6 +16,9 @@
 //	root.Handle("GET /readyz", ready)
 //	root.Handle("/", middleware.Chain(mux, ...))
 //
+// The outer mux takes the paths of the probes from the routes of the
+// service: a route such as GET /{code} no longer gets /readyz.
+//
 // The responses tell statuses only, such as
 // {"status":"failed","checks":{"db":"failed"}}: the errors of the checks
 // go to the log.

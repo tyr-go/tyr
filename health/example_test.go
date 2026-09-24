@@ -11,23 +11,33 @@ import (
 	"time"
 
 	"github.com/tyr-go/tyr/health"
+	"github.com/tyr-go/tyr/middleware"
 )
 
+// database stands for a database that is down until it's up.
+type database struct {
+	up atomic.Bool
+}
+
+func (d *database) PingContext(ctx context.Context) error {
+	if !d.up.Load() {
+		return errors.New("connection refused")
+	}
+	return nil
+}
+
 func ExampleReadiness() {
-	var up atomic.Bool // whether the database is up
+	db := &database{}
 	ready := health.NewReadiness(
-		health.Check("db", func(ctx context.Context) error {
-			if !up.Load() {
-				return errors.New("connection refused")
-			}
-			return nil
-		}),
+		health.Check("db", db.PingContext),
 		health.WithLogger(slog.New(slog.DiscardHandler)), // the errors of the checks go here
 	)
-	// A service passes everything else to its middleware.
+	// The probes go past the middleware of the service.
+	service := middleware.Chain(http.NewServeMux(), middleware.RequestID())
 	root := http.NewServeMux()
 	root.Handle("GET /livez", health.Live())
 	root.Handle("GET /readyz", ready)
+	root.Handle("/", service)
 
 	get := func(path string) {
 		rec := httptest.NewRecorder()
@@ -35,7 +45,7 @@ func ExampleReadiness() {
 		fmt.Println(path, rec.Code, rec.Body)
 	}
 	get("/readyz")
-	up.Store(true)
+	db.up.Store(true)
 	get("/readyz")
 
 	// Told to stop, the service drains: readiness fails while the server
