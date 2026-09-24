@@ -427,7 +427,19 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/docImportReq"
+                "type": "object",
+                "properties": {
+                  "links": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/docLinkInput"
+                    },
+                    "maxItems": 10
+                  }
+                },
+                "required": [
+                  "links"
+                ]
               }
             }
           },
@@ -686,21 +698,6 @@
           "code",
           "url",
           "created_at"
-        ]
-      },
-      "docImportReq": {
-        "type": "object",
-        "properties": {
-          "links": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/docLinkInput"
-            },
-            "maxItems": 10
-          }
-        },
-        "required": [
-          "links"
         ]
       },
       "docImported": {

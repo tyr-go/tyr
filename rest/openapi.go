@@ -25,8 +25,9 @@ import (
 //
 // An operation gets its route, its operationId, which is its name, and its
 // documentation (see [tyr.Doc]). The fields of its request tagged path,
-// query or header are its parameters, the other members its JSON body, and
-// the fields of its result tagged header the headers of its success. Its
+// query or header are its parameters, the other members its JSON body,
+// whose schema is part of the operation, and the fields of its result
+// tagged header the headers of its success. Its
 // errors are invalid_argument, which any request may get, and the kinds of
 // [tyr.Errors], as application/problem+json, by status; default stands for
 // the rest. The schemas are JSON Schema 2020-12 and say what the server
@@ -303,15 +304,11 @@ func (b *openAPIBuilder) operation(op *tyr.Operation, h *handler) *operation {
 			Schema:      paramSchema(mem.Schema, op.Req().FieldByIndex(mem.Index).Type, f.Source),
 		})
 	}
+	// The body is part of the operation, as the params of JSON-RPC are: it
+	// is the request but for its parameters, so no definition fits it.
 	if len(body) > 0 {
-		sch := plan.Object(body)
-		if len(body) == len(members) { // the definition of the request
-			if sch, err = b.schemas.Of(op.Req(), plan.Input); err != nil {
-				panicf(op, "%v", err)
-			}
-		}
 		o.RequestBody = &requestBody{
-			Content:  ordered[*mediaType]{{"application/json", &mediaType{Schema: sch}}},
+			Content:  ordered[*mediaType]{{"application/json", &mediaType{Schema: plan.Object(body)}}},
 			Required: slices.ContainsFunc(body, func(m plan.Member) bool { return m.Required }),
 		}
 	}

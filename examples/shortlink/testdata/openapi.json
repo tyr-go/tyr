@@ -18,7 +18,25 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateReq"
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "Where the link leads: an http or https URL.",
+                    "minLength": 1,
+                    "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://[^/?#]"
+                  },
+                  "code": {
+                    "type": "string",
+                    "description": "The code of the link, of a-z, 0-9 and '-'. Without it, the link gets a random one.",
+                    "minLength": 4,
+                    "maxLength": 16
+                  }
+                },
+                "required": [
+                  "url"
+                ]
               },
               "examples": {
                 "with a code": {
@@ -340,27 +358,6 @@
   },
   "components": {
     "schemas": {
-      "CreateReq": {
-        "type": "object",
-        "properties": {
-          "url": {
-            "type": "string",
-            "format": "uri",
-            "description": "Where the link leads: an http or https URL.",
-            "minLength": 1,
-            "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://[^/?#]"
-          },
-          "code": {
-            "type": "string",
-            "description": "The code of the link, of a-z, 0-9 and '-'. Without it, the link gets a random one.",
-            "minLength": 4,
-            "maxLength": 16
-          }
-        },
-        "required": [
-          "url"
-        ]
-      },
       "Created": {
         "type": "object",
         "properties": {
