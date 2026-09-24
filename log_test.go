@@ -207,4 +207,43 @@ func TestNewLogHandlerNil(t *testing.T) {
 	if got, want := panicValue(func() { tyr.NewLogHandler(nil) }), "tyr: NewLogHandler: nil handler"; got != want {
 		t.Errorf("NewLogHandler(nil) panicked with %v, want %q", got, want)
 	}
+	next := slog.NewJSONHandler(io.Discard, nil)
+	if got, want := panicValue(func() { tyr.NewLogHandler(next, nil) }), "tyr: NewLogHandler: nil option"; got != want {
+		t.Errorf("NewLogHandler(next, nil) panicked with %v, want %q", got, want)
+	}
+	if got, want := panicValue(func() { tyr.LogAttrs(nil) }), "tyr: LogAttrs: nil func"; got != want {
+		t.Errorf("LogAttrs(nil) panicked with %v, want %q", got, want)
+	}
+}
+
+// traceKey carries a trace ID in a context, as a tracer does.
+type traceKey struct{}
+
+// traceIDs appends the trace ID of ctx, if it has one, as LogAttrs takes.
+func traceIDs(ctx context.Context, attrs []slog.Attr) []slog.Attr {
+	if id, ok := ctx.Value(traceKey{}).(string); ok {
+		attrs = append(attrs, slog.String("trace_id", id))
+	}
+	return attrs
+}
+
+func TestLogAttrs(t *testing.T) {
+	// The attributes of LogAttrs go to the top level, after request_id and
+	// operation and in the order of the options, groups or not.
+	var buf bytes.Buffer
+	span := func(ctx context.Context, attrs []slog.Attr) []slog.Attr {
+		return append(attrs, slog.String("span_id", "s-1"))
+	}
+	l := slog.New(tyr.NewLogHandler(slog.NewJSONHandler(&buf, noTime), tyr.LogAttrs(traceIDs), tyr.LogAttrs(span)))
+	ctx := context.WithValue(tyr.WithRequestID(t.Context(), "req-1"), traceKey{}, "t-1")
+
+	l.InfoContext(ctx, "m", "code", "go")
+	l.With("svc", "links").WithGroup("db").With("table", "links").InfoContext(ctx, "m", "rows", 1)
+	l.InfoContext(t.Context(), "without a trace")
+	want := `{"level":"INFO","msg":"m","request_id":"req-1","trace_id":"t-1","span_id":"s-1","code":"go"}` + "\n" +
+		`{"level":"INFO","msg":"m","svc":"links","request_id":"req-1","trace_id":"t-1","span_id":"s-1","db":{"table":"links","rows":1}}` + "\n" +
+		`{"level":"INFO","msg":"without a trace","span_id":"s-1"}` + "\n"
+	if got := buf.String(); got != want {
+		t.Errorf("logged:\n%s\nwant:\n%s", got, want)
+	}
 }
