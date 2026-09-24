@@ -101,8 +101,9 @@ func RequestInfoFrom(ctx context.Context) (*RequestInfo, bool) {
 // pattern of the ServeMux that matched it, and the operation, or nil if
 // there is none or there are several, as in a JSON-RPC batch. A transport
 // calls Record once, before it calls the operation. Only the first Record
-// counts: a request that the operation makes in-process, with a context
-// derived from its own, can't overwrite what the transport recorded.
+// counts: a handler that a request reaches with a context derived from
+// that of another, such as a transport called directly by the handler of
+// that one, can't overwrite what the transport of the other recorded.
 func (i *RequestInfo) Record(route string, op *Operation) {
 	i.mu.Lock()
 	defer i.mu.Unlock()

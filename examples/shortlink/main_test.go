@@ -28,6 +28,7 @@ import (
 	"github.com/tyr-go/tyr/examples/shortlink/contract"
 	"github.com/tyr-go/tyr/examples/shortlink/links"
 	"github.com/tyr-go/tyr/examples/shortlink/store"
+	"github.com/tyr-go/tyr/inprocess"
 	"github.com/tyr-go/tyr/jsonrpc"
 )
 
@@ -438,12 +439,16 @@ func TestInProcess(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		s := start(t)
 		// The whole server, without a network: its middleware
-		// authenticates the caller by the header, as it does over one.
-		hc := jsonrpc.InProcess(s.handler)
+		// authenticates the caller by the header, as it does over one, and
+		// an admin in the context of the test isn't one of the server.
+		hc := inprocess.Client(s.handler)
 		purge := contract.PurgeReq{Host: "evil.example"}
-		_, err := rpc(hc, "").Call(t.Context(), contract.PurgeLinks, purge)
-		if se, ok := errors.AsType[*jsonrpc.ServerError](err); !ok || se.Kind != tyr.KindUnauthenticated {
-			t.Errorf("purge without a token = %v, want unauthenticated", err)
+		admin := authz.WithCaller(t.Context(), authz.Caller{Name: "admin", Roles: []string{"admin"}})
+		for _, ctx := range []context.Context{t.Context(), admin} {
+			_, err := rpc(hc, "").Call(ctx, contract.PurgeLinks, purge)
+			if se, ok := errors.AsType[*jsonrpc.ServerError](err); !ok || se.Kind != tyr.KindUnauthenticated {
+				t.Errorf("purge without a token = %v, want unauthenticated", err)
+			}
 		}
 		if res, err := rpc(hc, adminToken).Call(t.Context(), contract.PurgeLinks, purge); res.Purged != 0 || err != nil {
 			t.Errorf("purge by the admin = %+v, %v; want none purged", res, err)

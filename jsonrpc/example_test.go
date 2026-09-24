@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/inprocess"
 	"github.com/tyr-go/tyr/jsonrpc"
 	"github.com/tyr-go/tyr/rest"
 )
@@ -35,7 +36,7 @@ func ExampleClient() {
 
 	// In memory here; another program would pass an http.Client with a
 	// timeout and the URL of the service.
-	c := jsonrpc.NewClient("http://links/rpc", jsonrpc.InProcess(jsonrpc.Handler(api)))
+	c := jsonrpc.NewClient("http://links/rpc", inprocess.Client(jsonrpc.Handler(api)))
 	for _, code := range []string{"go", "gone", ""} {
 		link, err := c.Call(context.Background(), getLink, GetLinkReq{Code: code})
 		if se, ok := errors.AsType[*jsonrpc.ServerError](err); ok && se.Details != nil {
@@ -75,7 +76,7 @@ func ExampleServerError() {
 		}
 		return &Link{Code: "go", URL: "https://go.dev"}, nil
 	})
-	lc := jsonrpc.NewClient("http://links/rpc", jsonrpc.InProcess(jsonrpc.Handler(links)))
+	lc := jsonrpc.NewClient("http://links/rpc", inprocess.Client(jsonrpc.Handler(links)))
 
 	// A service that calls it translates what means something to its own
 	// clients, and the rest is internal.

@@ -59,7 +59,7 @@ tyr decodes the request, from the JSON body and then the fields tagged `path`, `
 
 - Handlers are plain functions, [`func(ctx, Req) (Res, error)`](https://pkg.go.dev/github.com/tyr-go/tyr#Handler), with no HTTP types
 - One operation over [REST](https://pkg.go.dev/github.com/tyr-go/tyr/rest) and [JSON-RPC 2.0](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc), by its name
-- [Contracts](https://pkg.go.dev/github.com/tyr-go/tyr#Define) that the server and a typed [JSON-RPC client](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Client) share, checked by the compiler, without codegen, and an [in-process client](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#InProcess) for tests
+- [Contracts](https://pkg.go.dev/github.com/tyr-go/tyr#Define) that the server and a typed [JSON-RPC client](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Client) share, checked by the compiler, without codegen, and an [in-process client](https://pkg.go.dev/github.com/tyr-go/tyr/inprocess#Client) for tests
 - [OpenAPI 3.1](https://pkg.go.dev/github.com/tyr-go/tyr/rest#Routes.OpenAPI) and [OpenRPC](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Discover) documents made of the same types and contracts: JSON Schemas of what the server reads and writes, with the constraints of the `validate` tags, and the summaries, errors and examples of the contracts
 - [Binding](https://pkg.go.dev/github.com/tyr-go/tyr/rest#hdr-Requests) from the JSON body, the path, the query and headers
 - [Validation](https://pkg.go.dev/github.com/tyr-go/tyr#hdr-Validation) by tags in the syntax of go-playground/validator and by a `Validate` method
@@ -248,7 +248,7 @@ mux.Handle("POST /rpc", jsonrpc.Handler(api))
 
 ### [Call an operation with a typed client](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#example-Client)
 
-A contract, made by `tyr.Define`, is a value that the server and its clients share. `Implement` doesn't compile unless the handler fits it, and `Call` takes its request type and returns its result type. An error of the server comes back as a `*jsonrpc.ServerError` with its kind. Here `InProcess` serves the calls in memory, as in a test; another program passes an `http.Client` with a timeout and the URL of the service:
+A contract, made by `tyr.Define`, is a value that the server and its clients share. `Implement` doesn't compile unless the handler fits it, and `Call` takes its request type and returns its result type. An error of the server comes back as a `*jsonrpc.ServerError` with its kind. Here `inprocess.Client` serves the calls in memory, as in a test, and the handler gets what it would get over a network: the headers, and the deadline and the cancellation of the context, but none of its values; another program passes an `http.Client` with a timeout and the URL of the service:
 
 <!-- Output: jsonrpc.ExampleClient -->
 ```go
@@ -261,7 +261,7 @@ api.Implement(getLink, func(ctx context.Context, req GetLinkReq) (*Link, error) 
 	return &Link{Code: "go", URL: "https://go.dev"}, nil
 })
 
-c := jsonrpc.NewClient("http://links/rpc", jsonrpc.InProcess(jsonrpc.Handler(api)))
+c := jsonrpc.NewClient("http://links/rpc", inprocess.Client(jsonrpc.Handler(api)))
 link, err := c.Call(ctx, getLink, GetLinkReq{Code: code})
 if se, ok := errors.AsType[*jsonrpc.ServerError](err); ok && se.Details != nil {
 	fmt.Println(se.Kind, se.Message, se.Details) // what the server answered

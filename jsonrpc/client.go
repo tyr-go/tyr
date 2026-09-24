@@ -39,11 +39,11 @@ import (
 // A generic method can't be in an interface, so code that calls a service
 // declares the small interface it needs, over a Client, and its tests run
 // the service in the same process, with a fake implementation of the
-// contract and a client of [InProcess]:
+// contract and a client of [github.com/tyr-go/tyr/inprocess.Client]:
 //
 //	api := tyr.New()
 //	api.Implement(contract.GetLink, fakeGetLink)
-//	c := jsonrpc.NewClient("http://links/rpc", jsonrpc.InProcess(jsonrpc.Handler(api)))
+//	c := jsonrpc.NewClient("http://links/rpc", inprocess.Client(jsonrpc.Handler(api)))
 //
 // # Errors of another service
 //

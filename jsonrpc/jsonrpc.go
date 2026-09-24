@@ -84,9 +84,10 @@
 //	link, err := c.Call(ctx, contract.GetLink, contract.GetLinkReq{Code: "go"})
 //
 // A client doesn't follow redirects, and it reads responses of up to 4 MiB,
-// counted after decompression; see [MaxResponseBytes]. [InProcess] serves the calls of a client with a handler in memory, with
-// the whole lifecycle of a call, for tests and for calls within one
-// program.
+// counted after decompression; see [MaxResponseBytes].
+// [github.com/tyr-go/tyr/inprocess.Client] serves its calls with a handler
+// in memory, with the whole lifecycle of a call, for tests and for calls
+// within one program.
 package jsonrpc
 
 import (
