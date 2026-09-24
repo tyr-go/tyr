@@ -77,7 +77,7 @@ func docAPI() *tyr.API {
 		tyr.Errors(tyr.KindAlreadyExists, tyr.KindFailedPrecondition),
 	).Example("with a code",
 		docCreateReq{URL: "https://go.dev", Code: "go-home", Tenant: "acme"},
-		docCreated{docLink: docLink{Code: "go-home", URL: "https://go.dev", CreatedAt: created, Visibility: "public"}, Location: "/links/go-home"},
+		docCreated{Code: "go-home", URL: "https://go.dev", CreatedAt: created, Visibility: "public", Location: "/links/go-home"},
 	), func(ctx context.Context, req docCreateReq) (docCreated, error) { return docCreated{}, nil })
 
 	api.Implement(tyr.Define[docGetReq, *docLink]("links.get",
