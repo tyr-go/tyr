@@ -110,7 +110,7 @@ func TestViolations(t *testing.T) {
 	}
 
 	// A rule of our own, after those of the core passed.
-	req = signupReq{page: page{Limit: 1}, Code: "Go_Dev", Pass: "p", Again: "p"}
+	req = signupReq{Limit: 1, Code: "Go_Dev", Pass: "p", Again: "p"}
 	if got, want := call(t, op, req), (tyr.Violations{{Pointer: "/code", Detail: "only a-z, 0-9 and '-'"}}); !slices.Equal(got, want) {
 		t.Errorf("violations = %v, want %v", got, want)
 	}

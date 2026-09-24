@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -198,9 +199,7 @@ func TestREST(t *testing.T) {
 	route := map[string]string{"http.request.method": "GET", "http.route": "/links/{code}", "tyr.operation": "links.get"}
 	with := func(extra ...string) map[string]string {
 		m := map[string]string{}
-		for k, v := range route {
-			m[k] = v
-		}
+		maps.Copy(m, route)
 		for i := 0; i+1 < len(extra); i += 2 {
 			m[extra[i]] = extra[i+1]
 		}
