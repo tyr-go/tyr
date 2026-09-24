@@ -33,7 +33,11 @@
 //
 // A batch may have up to 50 calls (see [MaxBatch]). They run concurrently,
 // at most 8 at a time, and the responses come in the order of the calls.
-// Once the client goes away, the calls that haven't started don't.
+// Each call has the timeout of its operation, if any (see [tyr.Timeout]),
+// from the time it starts. Once the client goes away, the calls that
+// haven't started don't, and fail with canceled; a deadline of the
+// context of the request, which a middleware may set to bound a batch as a
+// whole, fails them with deadline_exceeded.
 //
 // # Errors
 //

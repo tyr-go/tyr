@@ -203,9 +203,8 @@ func (h *handler) call(ctx context.Context, c call) outcome {
 }
 
 // callAll calls the operations of calls, at most concurrency at a time,
-// and returns their outcomes in the order of calls. Once ctx is done, as
-// when the client goes away, the calls that haven't started fail as
-// canceled instead.
+// and returns their outcomes in the order of calls. Once ctx is done, the
+// calls that haven't started fail instead, see notStarted.
 //
 // The calls are made by up to concurrency workers, each taking the next
 // call, and the goroutine of the request is one of them: goroutines start
@@ -239,7 +238,7 @@ func (h *handler) callAll(ctx context.Context, calls []call) []outcome {
 			switch {
 			case calls[i].op == nil:
 			case ctx.Err() != nil:
-				outcomes[i] = canceled(ctx)
+				outcomes[i] = notStarted(ctx)
 			default:
 				outcomes[i] = h.call(ctx, calls[i])
 			}
@@ -262,7 +261,14 @@ func (h *handler) callAll(ctx context.Context, calls []call) []outcome {
 	return outcomes
 }
 
-// canceled is the outcome of a call that didn't start because ctx is done.
-func canceled(ctx context.Context) outcome {
-	return outcome{ctx: ctx, err: tyr.Canceled("canceled").WithCause(ctx.Err())}
+// notStarted is the outcome of a call that didn't start because ctx is
+// done: deadline_exceeded if its deadline has passed, as a middleware may
+// set one to bound a batch, and canceled otherwise, as when the client
+// goes away.
+func notStarted(ctx context.Context) outcome {
+	err := ctx.Err()
+	if errors.Is(err, context.DeadlineExceeded) {
+		return outcome{ctx: ctx, err: tyr.DeadlineExceeded("deadline exceeded").WithCause(err)}
+	}
+	return outcome{ctx: ctx, err: tyr.Canceled("canceled").WithCause(err)}
 }

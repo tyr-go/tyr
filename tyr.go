@@ -299,6 +299,7 @@ func register[Req, Res any](a *API, call string, def Contract[Req, Res], h Handl
 	if err := checkExamples[Req](op, validation); err != nil {
 		panic("tyr: " + call + ": " + err.Error())
 	}
+	op.timeout, _ = timeoutKey.Get(op)
 	op.registered = true
 	a.names[def.name] = true
 	a.ops = append(a.ops, op)

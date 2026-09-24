@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"reflect"
 	"runtime/debug"
+	"time"
 
 	"github.com/tyr-go/tyr/internal/plan"
 )
@@ -24,8 +25,9 @@ type Operation struct {
 	req        reflect.Type
 	res        reflect.Type
 	api        *API
-	meta       map[any]any // set by MetaKey options, keyed by *MetaKey
-	registered bool        // once set, the operation is read-only
+	meta       map[any]any   // set by MetaKey options, keyed by *MetaKey
+	registered bool          // once set, the operation is read-only
+	timeout    time.Duration // of Timeout, read at registration; 0 if none
 
 	decode func(decode func(dst any) error) (any, error) // returns a new *Req
 	handle Invoker                                       // the innermost link: checks the *Req, calls the handler
@@ -121,7 +123,8 @@ func (op *Operation) Res() reflect.Type {
 
 // Call runs the operation once: it decodes a request, passes it through
 // the interceptors, validates it by its validate tags and [Validator],
-// calls the handler and returns the result. Transports call it for every
+// calls the handler and returns the result, all within the operation's
+// timeout, if it has one (see [Timeout]). Transports call it for every
 // request they serve, and tests may call it directly.
 //
 // decode fills in a new request, which it gets as a *Req; a nil decode
@@ -150,7 +153,13 @@ func (op *Operation) Call(ctx context.Context, decode func(dst any) error) (any,
 	if cur, ok := OperationFrom(ctx); !ok || cur != op {
 		ctx = WithOperation(ctx, op)
 	}
-	res, err := op.run(ctx, decode)
+	var res any
+	var err error
+	if op.timeout > 0 {
+		res, err = op.runWithin(ctx, decode)
+	} else {
+		res, err = op.run(ctx, decode)
+	}
 	if err == nil {
 		if wrong := op.check(res); wrong != nil {
 			err = Internal("internal error").WithCause(wrong)

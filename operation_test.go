@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/tyr-go/tyr"
 )
@@ -499,6 +500,19 @@ func BenchmarkCall(b *testing.B) {
 			}
 		})
 	}
+	// The context of a timeout and its timer.
+	b.Run("timeout", func(b *testing.B) {
+		api := tyr.New()
+		op := api.Handle("links.get", func(ctx context.Context, req getLinkReq) (*link, error) {
+			return goLink, nil
+		}, tyr.Timeout(time.Second))
+		api.Seal()
+		ctx, decode := b.Context(), decodeTo(getLinkReq{Code: "go"})
+		b.ReportAllocs()
+		for b.Loop() {
+			_, _ = op.Call(ctx, decode)
+		}
+	})
 }
 
 // recorder is a slog.Handler that keeps what it logs.

@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"runtime/pprof"
+	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -468,6 +470,92 @@ func TestBatchCanceledLeaksNothing(t *testing.T) {
 	if n := strings.Count(rec.Body.String(), `"code":499`); n != 20 || len(started) != 0 {
 		t.Errorf("%d canceled calls of 20, %d more started; want 20, none: %s", n, len(started), rec.Body)
 	}
+	var profile bytes.Buffer
+	if err := pprof.Lookup("goroutineleak").WriteTo(&profile, 1); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(profile.String(), "jsonrpc") {
+		t.Errorf("leaked goroutines:\n%s", profile.String())
+	}
+}
+
+func TestBatchTimeout(t *testing.T) {
+	// Each call has the timeout of its operation from the time it starts:
+	// 16 calls on 8 workers time out in two rounds.
+	synctest.Test(t, func(t *testing.T) {
+		api := newAPI()
+		var mu sync.Mutex
+		var left []time.Duration // from the start of the batch to the deadline of a call
+		start := time.Now()
+		api.Handle("things.wait", func(ctx context.Context, req thing) (struct{}, error) {
+			deadline, _ := ctx.Deadline()
+			mu.Lock()
+			left = append(left, deadline.Sub(start))
+			mu.Unlock()
+			<-ctx.Done()
+			return struct{}{}, ctx.Err()
+		}, tyr.Timeout(time.Second))
+
+		rec := post(jsonrpc.Handler(api), batchOf("things.wait", 16))
+		if took := time.Since(start); took != 2*time.Second {
+			t.Errorf("the batch took %v, want 2s", took)
+		}
+		const timedOut = `"error":{"code":504,"message":"deadline exceeded","data":{"kind":"deadline_exceeded"}}`
+		if n := strings.Count(rec.Body.String(), timedOut); n != 16 {
+			t.Errorf("%d calls timed out of 16: %s", n, rec.Body)
+		}
+		slices.Sort(left)
+		want := slices.Concat(slices.Repeat([]time.Duration{time.Second}, 8), slices.Repeat([]time.Duration{2 * time.Second}, 8))
+		if !slices.Equal(left, want) {
+			t.Errorf("the calls had deadlines at %v, want %v", left, want)
+		}
+	})
+}
+
+func TestBatchDeadline(t *testing.T) {
+	// A deadline of the request bounds the batch as a whole: the calls
+	// that run get it, and those that haven't started by then fail with it
+	// too, rather than as canceled by the client.
+	synctest.Test(t, func(t *testing.T) {
+		api, started := waitAPI()
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		req := httptest.NewRequestWithContext(ctx, "POST", "/rpc", strings.NewReader(batchOf("things.wait", 20)))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		jsonrpc.Handler(api).ServeHTTP(rec, req)
+
+		const timedOut = `"error":{"code":504,"message":"deadline exceeded","data":{"kind":"deadline_exceeded"}}`
+		if n := strings.Count(rec.Body.String(), timedOut); n != 20 || len(started) != 8 {
+			t.Errorf("%d calls timed out of 20 after %d started, want 20 after 8: %s", n, len(started), rec.Body)
+		}
+	})
+}
+
+func TestTimeoutLeaksNothing(t *testing.T) {
+	// The timeouts of the calls of a batch and the deadline of a request
+	// leave no goroutine behind.
+	api := newAPI()
+	api.Handle("things.wait", func(ctx context.Context, req thing) (struct{}, error) {
+		<-ctx.Done()
+		return struct{}{}, ctx.Err()
+	}, tyr.Timeout(time.Millisecond))
+	h := jsonrpc.Handler(api)
+	if rec := post(h, batchOf("things.wait", 20)); strings.Count(rec.Body.String(), `"code":504`) != 20 {
+		t.Errorf("timeouts: %s, want 20 calls timed out", rec.Body)
+	}
+
+	waiting, _ := waitAPI()
+	ctx, cancel := context.WithTimeout(t.Context(), time.Millisecond)
+	defer cancel()
+	req := httptest.NewRequestWithContext(ctx, "POST", "/rpc", strings.NewReader(batchOf("things.wait", 20)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	jsonrpc.Handler(waiting).ServeHTTP(rec, req)
+	if strings.Count(rec.Body.String(), `"code":504`) != 20 {
+		t.Errorf("a deadline of the request: %s, want 20 calls timed out", rec.Body)
+	}
+
 	var profile bytes.Buffer
 	if err := pprof.Lookup("goroutineleak").WriteTo(&profile, 1); err != nil {
 		t.Fatal(err)

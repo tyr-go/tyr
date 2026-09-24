@@ -12,10 +12,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
 	"sync"
 	"testing"
 	"testing/iotest"
+	"testing/synctest"
 	"time"
 
 	"github.com/tyr-go/tyr"
@@ -408,6 +410,51 @@ func TestCanceled(t *testing.T) {
 		t.Errorf("response = %d %s, logged %q; want 499 problem+json and nothing", rec.Code, rec.Header().Get("Content-Type"), buf.Bytes())
 	}
 	golden(t, "error_canceled", rec.Body.Bytes())
+}
+
+// waitLink is links.get that waits for its context to be done.
+func waitLink(ctx context.Context, req getLinkReq) (*link, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestTimeout(t *testing.T) {
+	// The handler stops at the timeout of its operation, and the client
+	// gets 504.
+	synctest.Test(t, func(t *testing.T) {
+		mux := mount(t, func(api *tyr.API) {
+			api.Handle("links.get", waitLink, rest.Route("GET /links/{code}"), tyr.Timeout(time.Second))
+		})
+		start := time.Now()
+		rec := do(mux, "GET", "/links/go", "", "")
+		if took := time.Since(start); rec.Code != http.StatusGatewayTimeout || took != time.Second {
+			t.Errorf("response = %d after %v, want 504 after 1s", rec.Code, took)
+		}
+		golden(t, "error_timeout", rec.Body.Bytes())
+	})
+}
+
+func TestTimeoutLeaksNothing(t *testing.T) {
+	mux := mount(t, func(api *tyr.API) {
+		api.Handle("links.get", waitLink, rest.Route("GET /links/{code}"), tyr.Timeout(time.Millisecond))
+	})
+	srv := httptest.NewTestServer(t, mux)
+	resp, err := srv.Client().Get("http://example.com/links/go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusGatewayTimeout {
+		t.Errorf("response = %d, want 504", resp.StatusCode)
+	}
+
+	var profile bytes.Buffer
+	if err := pprof.Lookup("goroutineleak").WriteTo(&profile, 1); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(profile.String(), "tyr-go/tyr") {
+		t.Errorf("leaked goroutines:\n%s", profile.String())
+	}
 }
 
 func TestRequestInfo(t *testing.T) {
