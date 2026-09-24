@@ -96,7 +96,7 @@ func TestValidateDurationInNanoseconds(t *testing.T) {
 }
 
 func TestNewValidationErrors(t *testing.T) {
-	const hint = "; add the validate/playground module for more rules, or move the check to Validate()"
+	const hint = "; check the tags with tyr.WithValidator(playground.New()) of the module validate/playground for more rules, or move the check to Validate()"
 	tests := []struct {
 		name string
 		typ  reflect.Type
@@ -214,5 +214,118 @@ func TestNewValidationErrors(t *testing.T) {
 				t.Errorf("NewValidation() error = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFailures(t *testing.T) {
+	// Failures, with the pointers of Pointer and the details of Detail, says
+	// what Validate says: a validator of its own that reports what the core
+	// reports gets the violations of the core.
+	for _, c := range plantest.Checks() {
+		t.Run(c.Name, func(t *testing.T) {
+			typ := reflect.TypeOf(c.Value)
+			v, err := plan.NewValidation(typ)
+			if err != nil {
+				t.Fatalf("NewValidation() error = %v", err)
+			}
+			var got []plantest.Violation
+			for _, f := range v.Failures(reflect.ValueOf(c.Value)) {
+				p, vt, err := plan.Pointer(typ, f.Path)
+				if err != nil {
+					t.Fatalf("Pointer(%v) error = %v", f.Path, err)
+				}
+				d, ok := plan.Detail(f.Rule, f.Param, vt)
+				if !ok {
+					t.Fatalf("Detail(%q, %q, %v) is unknown", f.Rule, f.Param, vt)
+				}
+				got = append(got, plantest.Violation{Pointer: p, Detail: d})
+			}
+			if !slices.Equal(got, c.Want) {
+				t.Errorf("Failures() =\n%q\nwant\n%q", got, c.Want)
+			}
+		})
+	}
+}
+
+func TestPointer(t *testing.T) {
+	type item struct {
+		Name string `json:"name"`
+	}
+	type page struct {
+		Limit int `json:"limit"`
+	}
+	type named struct {
+		Size int `json:"size"`
+	}
+	type req struct {
+		page
+		named   `json:"named"`
+		Profile *struct {
+			Color string `json:"color"`
+		} `json:"profile"`
+		Items  []*item            `json:"items"`
+		Grid   [2][]int           `json:"grid"`
+		Labels map[string]*string `json:"labels"`
+		Secret string             `json:"-"`
+		Plain  bool
+	}
+	tests := []struct {
+		path []string
+		want string
+		typ  reflect.Type
+	}{
+		{nil, "", reflect.TypeFor[req]()},
+		{[]string{"page", "Limit"}, "/limit", reflect.TypeFor[int]()},
+		{[]string{"named", "Size"}, "/named/size", reflect.TypeFor[int]()},
+		{[]string{"Profile", "Color"}, "/profile/color", reflect.TypeFor[string]()},
+		{[]string{"Items", "3", "Name"}, "/items/3/name", reflect.TypeFor[string]()},
+		{[]string{"Items", "0"}, "/items/0", reflect.TypeFor[item]()},
+		{[]string{"Grid", "1", "0"}, "/grid/1/0", reflect.TypeFor[int]()},
+		{[]string{"Labels", "a/b~c"}, "/labels/a~1b~0c", reflect.TypeFor[string]()},
+		{[]string{"Secret"}, "/Secret", reflect.TypeFor[string]()},
+		{[]string{"Plain"}, "/Plain", reflect.TypeFor[bool]()},
+	}
+	for _, tt := range tests {
+		got, typ, err := plan.Pointer(reflect.TypeFor[req](), tt.path)
+		if err != nil || got != tt.want || typ != tt.typ {
+			t.Errorf("Pointer(%q) = %q, %v, %v; want %q, %v", tt.path, got, typ, err, tt.want, tt.typ)
+		}
+	}
+
+	for _, path := range [][]string{
+		{"Nope"},              // no such field
+		{"Limit"},             // promoted, not a field of req itself
+		{"Items", "x"},        // not an index
+		{"Items", "-1"},       // not an index
+		{"Plain", "Deeper"},   // past a bool
+		{"Profile", "Colour"}, // no such field below
+	} {
+		if got, _, err := plan.Pointer(reflect.TypeFor[req](), path); err == nil {
+			t.Errorf("Pointer(%q) = %q, want an error", path, got)
+		}
+	}
+}
+
+func TestDetail(t *testing.T) {
+	tests := []struct {
+		rule, param string
+		typ         reflect.Type
+		want        string
+		ok          bool
+	}{
+		{"required", "", reflect.TypeFor[string](), "is required", true},
+		{"min", "4", reflect.TypeFor[string](), "must be at least 4 characters", true},
+		{"min", "2", reflect.TypeFor[[]int](), "must have at least 2 items", true},
+		{"max", "10", reflect.TypeFor[int](), "must be at most 10", true},
+		{"oneof", "red green", reflect.TypeFor[string](), "must be one of: red, green", true},
+		{"omitempty", "", reflect.TypeFor[string](), "", false}, // it never fails
+		{"e164", "", reflect.TypeFor[string](), "", false},      // not a rule of the core
+		{"min", "1", reflect.TypeFor[time.Time](), "", false},   // not for times in the core
+		{"min", "x", reflect.TypeFor[string](), "", false},      // a parameter the core can't read
+	}
+	for _, tt := range tests {
+		if got, ok := plan.Detail(tt.rule, tt.param, tt.typ); got != tt.want || ok != tt.ok {
+			t.Errorf("Detail(%q, %q, %v) = %q, %v; want %q, %v", tt.rule, tt.param, tt.typ, got, ok, tt.want, tt.ok)
+		}
 	}
 }

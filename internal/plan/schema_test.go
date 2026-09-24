@@ -161,6 +161,52 @@ func TestSchemaKeywords(t *testing.T) {
 	}
 }
 
+func TestSchemaOfAnotherValidator(t *testing.T) {
+	// With a validator of its own, a tag may have rules the core doesn't
+	// know: they add no keywords, nor do the rules after dive and the
+	// alternatives with |, while the rules of the core still do. Whether a
+	// member is required is up to the validator.
+	type req struct {
+		Phone string   `json:"phone" validate:"e164"`
+		Code  string   `json:"code" validate:"omitempty,min=4,e164"`
+		Tags  []string `json:"tags" validate:"min=1,dive,min=2"`
+		When  string   `json:"when" validate:"alpha|numeric,max=5"`
+		Note  string   `json:"note" validate:"omitempty,startswith=x"`
+	}
+	s := NewSchemas("#/$defs/")
+	s.SetFailing(func(t reflect.Type) ([][]string, error) {
+		if t != reflect.TypeFor[req]() {
+			return nil, nil
+		}
+		return [][]string{{"Phone"}, {"Tags"}, {"When"}}, nil
+	})
+	ms, err := s.Members(reflect.TypeFor[req](), Input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"type":"object","properties":{` +
+		`"phone":{"type":"string"},` +
+		`"code":{"type":"string","minLength":4},` +
+		`"tags":{"type":"array","items":{"type":"string"},"minItems":1},` +
+		`"when":{"type":"string","maxLength":5},` +
+		`"note":{"type":"string"}},` +
+		`"required":["phone","tags","when"]}`
+	if got := compact(t, Object(ms)); got != want {
+		t.Errorf("schema\n%s\nwant\n%s", got, want)
+	}
+
+	// Without it, the core checks the tags, and e164 is no rule of its.
+	if _, err := NewSchemas("#/$defs/").Members(reflect.TypeFor[req](), Input); err == nil || !strings.Contains(err.Error(), `unknown rule "e164"`) {
+		t.Errorf("without the validator, Members() error = %v, want an unknown rule", err)
+	}
+	// A path of the validator that leads nowhere is an error.
+	s = NewSchemas("#/$defs/")
+	s.SetFailing(func(reflect.Type) ([][]string, error) { return [][]string{{"Nope"}}, nil })
+	if _, err := s.Members(reflect.TypeFor[req](), Input); err == nil || !strings.Contains(err.Error(), "has no field Nope") {
+		t.Errorf("with a path to no field, Members() error = %v", err)
+	}
+}
+
 func TestRuleKeywords(t *testing.T) {
 	// Every rule adds its keywords, next to its check, for every type it
 	// applies to.

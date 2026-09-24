@@ -103,7 +103,7 @@ func TestHandleBadValidateTag(t *testing.T) {
 		})
 	})
 	want := `tyr: Handle("links.get"): field Code: validate:"required,maxx=4": unknown rule "maxx"; ` +
-		`add the validate/playground module for more rules, or move the check to Validate()`
+		`check the tags with tyr.WithValidator(playground.New()) of the module validate/playground for more rules, or move the check to Validate()`
 	if got != want {
 		t.Errorf("Handle() panicked with %v, want %q", got, want)
 	}

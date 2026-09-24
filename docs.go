@@ -4,10 +4,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
-	"reflect"
 	"slices"
-
-	"github.com/tyr-go/tyr/internal/plan"
 )
 
 // Doc is the documentation of an operation, for the documents that
@@ -176,7 +173,7 @@ func (op *Operation) Doc() Doc {
 // checkExamples reports what's wrong with the examples of op, if anything,
 // as described at Contract.Example. validation is that of Req, if it has
 // any. Only Contract.Example adds examples, so they have the types of op.
-func checkExamples[Req any](op *Operation, validation *plan.Validation) error {
+func checkExamples[Req any](op *Operation, validate func(req any) (Violations, error)) error {
 	examples, _ := examplesKey.Get(op)
 	names := make(map[string]bool, len(examples))
 	for _, ex := range examples {
@@ -186,8 +183,12 @@ func checkExamples[Req any](op *Operation, validation *plan.Validation) error {
 		names[ex.Name] = true
 
 		req := ex.Req.(Req)
-		if validation != nil {
-			if vs := validation.Validate(reflect.ValueOf(&req).Elem()); len(vs) > 0 {
+		if validate != nil {
+			vs, err := validate(&req)
+			if err != nil {
+				return fmt.Errorf("example %q: %w", ex.Name, err)
+			}
+			if len(vs) > 0 {
 				return fmt.Errorf("example %q: the request fails validation: %s: %s", ex.Name, vs[0].Pointer, vs[0].Detail)
 			}
 		}

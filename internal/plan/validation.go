@@ -40,6 +40,7 @@ type validatedStruct struct {
 // validatedField is the plan of one field of a struct.
 type validatedField struct {
 	index   int
+	name    string // in Go
 	segment string // of the JSON Pointer; "" for a struct embedded in JSON
 	rules   []rule
 	nested  *validatedStruct // for a field of a struct type or a pointer to one
@@ -48,6 +49,7 @@ type validatedField struct {
 // rule is one rule of a validate tag.
 type rule struct {
 	name   string
+	param  string
 	detail string                                       // of a violation
 	check  func(v reflect.Value, fromPointer bool) bool // v has no pointers left
 	// keywords add to s, the JSON Schema of the values of the field, what
@@ -57,7 +59,7 @@ type rule struct {
 }
 
 // hint ends the message about a rule the core doesn't know.
-const hint = "add the validate/playground module for more rules, or move the check to Validate()"
+const hint = "check the tags with tyr.WithValidator(playground.New()) of the module validate/playground for more rules, or move the check to Validate()"
 
 // NewValidation returns the validation of the struct type t, or nil if t
 // has nothing to validate. It fails on an unknown rule, a rule that
@@ -79,6 +81,22 @@ func (p *Validation) Validate(v reflect.Value) []Violation {
 	return out
 }
 
+// Failure is a rule that a value fails, as Failures reports it.
+type Failure struct {
+	Path  []string // the Go names of the fields from the validated struct down to the value
+	Rule  string
+	Param string
+}
+
+// Failures returns the rules that v, a value of the validation's type,
+// fails, as Validate does, but with the Go names of the fields rather than
+// JSON Pointers, as validators of their own report failures; see Pointer.
+func (p *Validation) Failures(v reflect.Value) []Failure {
+	var out []Failure
+	p.root.failures(v, nil, &out)
+	return out
+}
+
 func (s *validatedStruct) validate(v reflect.Value, prefix string, out *[]Violation) {
 	for i := range s.fields {
 		f := &s.fields[i]
@@ -86,35 +104,63 @@ func (s *validatedStruct) validate(v reflect.Value, prefix string, out *[]Violat
 	}
 }
 
+func (s *validatedStruct) failures(v reflect.Value, path []string, out *[]Failure) {
+	for i := range s.fields {
+		f := &s.fields[i]
+		f.failures(v.Field(f.index), append(path[:len(path):len(path)], f.name), out)
+	}
+}
+
 func (f *validatedField) validate(v reflect.Value, pointer string, out *[]Violation) {
+	failed, v := f.check(v)
+	switch {
+	case failed != nil:
+		*out = append(*out, Violation{Pointer: pointer, Detail: failed.detail})
+	case v.IsValid() && f.nested != nil:
+		f.nested.validate(v, pointer, out)
+	}
+}
+
+func (f *validatedField) failures(v reflect.Value, path []string, out *[]Failure) {
+	failed, v := f.check(v)
+	switch {
+	case failed != nil:
+		*out = append(*out, Failure{Path: path, Rule: failed.name, Param: failed.param})
+	case v.IsValid() && f.nested != nil:
+		f.nested.failures(v, path, out)
+	}
+}
+
+// check returns the rule of the field that v, its value, fails, if any;
+// otherwise v past its pointers, whose fields are checked next, or the zero
+// Value if they aren't.
+func (f *validatedField) check(v reflect.Value) (*rule, reflect.Value) {
 	// Like go-playground, go through pointers to the value. A nil one only
 	// answers to the first rule: omitempty skips it, any other rule fails.
 	fromPointer := false
 	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		if v.IsNil() {
 			if len(f.rules) > 0 && f.rules[0].name != "omitempty" {
-				*out = append(*out, Violation{Pointer: pointer, Detail: f.rules[0].detail})
+				return &f.rules[0], reflect.Value{}
 			}
-			return
+			return nil, reflect.Value{}
 		}
 		v = v.Elem()
 		fromPointer = true
 	}
-	for _, r := range f.rules {
+	for i := range f.rules {
+		r := &f.rules[i]
 		if r.name == "omitempty" {
 			if !hasValue(v, fromPointer) {
-				return
+				return nil, reflect.Value{}
 			}
 			continue
 		}
 		if !r.check(v, fromPointer) {
-			*out = append(*out, Violation{Pointer: pointer, Detail: r.detail})
-			return
+			return r, reflect.Value{}
 		}
 	}
-	if f.nested != nil {
-		f.nested.validate(v, pointer, out)
-	}
+	return nil, v
 }
 
 // hasValue is hasValue of go-playground, which required and omitempty use:
@@ -152,7 +198,7 @@ func (b *validationBuilder) build(t reflect.Type, path string) (*validatedStruct
 		if path != "" {
 			name = path + "." + sf.Name
 		}
-		f := validatedField{index: i, segment: segment(sf)}
+		f := validatedField{index: i, name: sf.Name, segment: segment(sf)}
 
 		value := sf.Type
 		for value.Kind() == reflect.Pointer {
@@ -216,6 +262,92 @@ func parseRules(name, tag string, t reflect.Type) ([]rule, error) {
 	return rules, nil
 }
 
+// keywordRules returns the rules of the validate tag of a field, whose
+// value, past any pointers, is of type t, that give the schema of the field
+// keywords: those that the core knows and that apply to t. A validator of
+// its own may take other rules, and then the keywords of a rule the core
+// doesn't know would promise what the schema can't vouch for. The rules
+// after dive check the elements, and the alternatives with | either, so
+// neither adds keywords. Without such a validator, Mount checked the tag,
+// and these are all of its rules.
+func keywordRules(tag string, t reflect.Type) []rule {
+	var rules []rule
+	for part := range strings.SplitSeq(tag, ",") {
+		if part == "dive" {
+			break
+		}
+		if strings.Contains(part, "|") {
+			continue
+		}
+		key, param, _ := strings.Cut(part, "=")
+		if r, err := newRule(key, param, t); err == nil {
+			rules = append(rules, r)
+		}
+	}
+	return rules
+}
+
+// Detail returns what a violation of the rule key=param says of a value of
+// type t, past pointers, and reports whether the core knows the rule for
+// the type: the detail of a failure that a validator of its own reports.
+func Detail(key, param string, t reflect.Type) (string, bool) {
+	r, err := newRule(key, param, t)
+	if err != nil || r.detail == "" {
+		return "", false
+	}
+	return r.detail, true
+}
+
+// Pointer returns the JSON Pointer of the value at path in a value of the
+// struct type t, and the type of that value, past pointers. path is as
+// Failures and validators of their own report it: the Go names of fields,
+// the embedded ones among them, and the indexes of the elements of slices
+// and arrays and the keys of maps. The segment of a field is the one that
+// Validate gives it, so the pointers are those of Validate.
+func Pointer(t reflect.Type, path []string) (string, reflect.Type, error) {
+	ptr := ""
+	for i, step := range path {
+		for t.Kind() == reflect.Pointer {
+			t = t.Elem()
+		}
+		switch t.Kind() {
+		case reflect.Struct:
+			sf, ok := directField(t, step)
+			if !ok {
+				return "", nil, fmt.Errorf("%v has no field %s", t, step)
+			}
+			ptr += segment(sf)
+			t = sf.Type
+		case reflect.Slice, reflect.Array:
+			if _, err := strconv.ParseUint(step, 10, 0); err != nil {
+				return "", nil, fmt.Errorf("%v has no element %q", t, step)
+			}
+			ptr += "/" + step
+			t = t.Elem()
+		case reflect.Map:
+			ptr = pointer(ptr, step)
+			t = t.Elem()
+		default:
+			return "", nil, fmt.Errorf("path %s goes past %v", strings.Join(path[:i+1], "."), t)
+		}
+	}
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	return ptr, t, nil
+}
+
+// directField returns the field of the struct type t with the Go name
+// name, an embedded one too, but not a field promoted from one.
+func directField(t reflect.Type, name string) (reflect.StructField, bool) {
+	for sf := range t.Fields() {
+		if sf.Name == name {
+			return sf, true
+		}
+	}
+	return reflect.StructField{}, false
+}
+
 // ruleNames are the names of the rules that the core knows.
 var ruleNames = []string{
 	"required", "omitempty", "min", "max", "len", "gt", "gte", "lt", "lte",
@@ -224,7 +356,7 @@ var ruleNames = []string{
 
 // newRule returns the rule key=param for values of type t.
 func newRule(key, param string, t reflect.Type) (rule, error) {
-	r := rule{name: key}
+	r := rule{name: key, param: param}
 	if (key == "required" || key == "omitempty") && param != "" {
 		return r, fmt.Errorf("rule %q takes no parameter", key)
 	}

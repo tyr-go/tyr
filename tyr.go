@@ -56,6 +56,11 @@
 // the order of the fields. An unknown rule, a rule that doesn't apply to
 // the type of its field, or a bad parameter makes [API.Handle] panic.
 //
+// [WithValidator] has the tags checked by another [TagValidator], with the
+// rules the subset lacks, such as dive, or rules of your own: the module
+// github.com/tyr-go/tyr/validate/playground has all of go-playground. The
+// violations keep the JSON Pointers and the details of the core.
+//
 // # For transports
 //
 // A transport serves the operations of an API; handlers and interceptors
@@ -63,6 +68,8 @@
 // runs every request with [Operation.Call], keeps the operation in the
 // context beyond the call with [WithOperation], and records what served a
 // request with [RequestInfo.Record], which it finds with [RequestInfoFrom].
+// A transport that describes the requests asks [API.Validator] which of
+// their members are required.
 package tyr
 
 import (
@@ -73,8 +80,6 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-
-	"github.com/tyr-go/tyr/internal/plan"
 )
 
 // Handler is the only shape business logic takes: a plain function of a
@@ -93,6 +98,7 @@ type API struct {
 	mappers      []func(error) error
 	interceptors []Interceptor
 	log          *slog.Logger
+	validator    TagValidator // nil for the subset of the core
 	sealed       bool
 }
 
@@ -281,7 +287,7 @@ func register[Req, Res any](a *API, call string, def Contract[Req, Res], h Handl
 		panic("tyr: " + call + ": nil handler")
 	}
 	t := reflect.TypeFor[Req]()
-	validation, err := plan.NewValidation(t)
+	validate, err := a.tagCheck(t)
 	if err != nil {
 		panic("tyr: " + call + ": " + err.Error())
 	}
@@ -289,14 +295,14 @@ func register[Req, Res any](a *API, call string, def Contract[Req, Res], h Handl
 		panic("tyr: " + call + ": " + conflict)
 	}
 
-	op := newOperation(a, def.name, h, validation)
+	op := newOperation(a, def.name, h, validate)
 	for _, opt := range slices.Concat(groupOpts, def.opts) {
 		if opt == nil {
 			panic("tyr: " + call + ": nil option") // of a group: Define checked its own
 		}
 		opt(op)
 	}
-	if err := checkExamples[Req](op, validation); err != nil {
+	if err := checkExamples[Req](op, validate); err != nil {
 		panic("tyr: " + call + ": " + err.Error())
 	}
 	op.timeout, _ = timeoutKey.Get(op)

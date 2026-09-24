@@ -44,10 +44,11 @@ func (d Direction) String() string {
 // A named struct type becomes a definition per direction, and schemas
 // reference it; see Defs.
 type Schemas struct {
-	prefix string // of the references to definitions
-	defs   map[defKey]*jsonschema.Def
-	order  []defKey // of the definitions, as they were made
-	names  map[reflect.Type]string
+	prefix  string // of the references to definitions
+	defs    map[defKey]*jsonschema.Def
+	order   []defKey // of the definitions, as they were made
+	names   map[reflect.Type]string
+	failing func(t reflect.Type) ([][]string, error) // see SetFailing
 }
 
 // defKey identifies a definition.
@@ -60,6 +61,16 @@ type defKey struct {
 // with prefix and their names, such as "#/components/schemas/".
 func NewSchemas(prefix string) *Schemas {
 	return &Schemas{prefix: prefix, defs: make(map[defKey]*jsonschema.Def), names: make(map[reflect.Type]string)}
+}
+
+// SetFailing makes the schemas of requests take their required members from
+// failing rather than from the validation of the core: failing returns the
+// paths, as Pointer takes them, of the values in a zero value of the struct
+// type t that fail its validate tags, as the validator of an API reports
+// them. The keywords of the tags come from the rules the core knows either
+// way.
+func (s *Schemas) SetFailing(failing func(t reflect.Type) ([][]string, error)) {
+	s.failing = failing
 }
 
 // Name makes name the base name of the definitions of the struct type t,
@@ -293,14 +304,8 @@ func (s *Schemas) members(t reflect.Type, dir Direction, path string) ([]Member,
 	// the input leaves its field zero.
 	var failing []string
 	if dir == Input {
-		v, err := NewValidation(t)
-		if err != nil {
+		if failing, err = s.failingOf(t); err != nil {
 			return nil, nil, fmt.Errorf("%s: %w", path, err)
-		}
-		if v != nil {
-			for _, x := range v.Validate(reflect.Zero(t)) {
-				failing = append(failing, x.Pointer)
-			}
 		}
 	}
 
@@ -330,6 +335,35 @@ func (s *Schemas) members(t reflect.Type, dir Direction, path string) ([]Member,
 	return out, fallback, nil
 }
 
+// failingOf returns the JSON Pointers of the values in a zero value of the
+// struct type t that fail validation: its validate tags, as the validator
+// of SetFailing or the core checks them.
+func (s *Schemas) failingOf(t reflect.Type) ([]string, error) {
+	var out []string
+	if s.failing != nil {
+		paths, err := s.failing(t)
+		if err != nil {
+			return nil, err
+		}
+		for _, path := range paths {
+			p, _, err := Pointer(t, path)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, p)
+		}
+		return out, nil
+	}
+	v, err := NewValidation(t)
+	if err != nil || v == nil {
+		return nil, err
+	}
+	for _, x := range v.Validate(reflect.Zero(t)) {
+		out = append(out, x.Pointer)
+	}
+	return out, nil
+}
+
 // member returns the schema of the values of the member m, with the
 // keywords of its validate tag for Input.
 func (s *Schemas) member(m member, dir Direction, required bool, path string) (*jsonschema.Schema, error) {
@@ -348,10 +382,7 @@ func (s *Schemas) member(m member, dir Direction, required bool, path string) (*
 		for t.Kind() == reflect.Pointer {
 			t = t.Elem()
 		}
-		rules, err := parseRules(path, tag, t)
-		if err != nil {
-			return nil, err
-		}
+		rules := keywordRules(tag, t)
 		// The rules check the Go value. A type that JSON carries by
 		// methods of its own may write it in any way, such as an int as
 		// its name, so the keywords of the rules would demand of its JSON

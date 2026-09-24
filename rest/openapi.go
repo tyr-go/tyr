@@ -13,6 +13,7 @@ import (
 	"github.com/tyr-go/tyr"
 	"github.com/tyr-go/tyr/internal/jsonschema"
 	"github.com/tyr-go/tyr/internal/plan"
+	"github.com/tyr-go/tyr/internal/tagcheck"
 )
 
 // OpenAPI returns a handler that serves the OpenAPI 3.1 document of the
@@ -183,6 +184,7 @@ func (o ordered[T]) get(name string) (T, bool) {
 // them.
 func openAPIOf(rs *Routes, info tyr.Info) *openAPIDoc {
 	b := &openAPIBuilder{mount: rs.mount, schemas: plan.NewSchemas("#/components/schemas/")}
+	b.schemas.SetFailing(tagcheck.Failing(rs.api.Validator()))
 	b.schemas.Name(reflect.TypeFor[problem](), "Problem")
 	problemRef, err := b.schemas.Of(reflect.TypeFor[problem](), plan.Output)
 	if err != nil {

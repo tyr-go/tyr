@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"log/slog"
 	"maps"
 	"net/http"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -226,5 +228,51 @@ func TestOpenAPIPanics(t *testing.T) {
 				t.Errorf("panicked with %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// phoneReq has a rule that the core doesn't know, for a validator of its
+// own.
+type phoneReq struct {
+	Phone string `json:"phone" validate:"e164"`
+	Name  string `json:"name" validate:"omitempty,min=2,alphaunicode"`
+}
+
+// phoneValidator is a TagValidator by which a phoneReq without a phone
+// fails at it.
+type phoneValidator struct{}
+
+func (phoneValidator) Plan(t reflect.Type) (func(req any) []tyr.FailedRule, error) {
+	return func(req any) []tyr.FailedRule {
+		if r, ok := req.(*phoneReq); ok && r.Phone == "" {
+			return []tyr.FailedRule{{Path: []string{"Phone"}, Rule: "e164"}}
+		}
+		return nil
+	}, nil
+}
+
+func TestOpenAPIWithValidator(t *testing.T) {
+	// With a validator of its own, a member is required as a zero value
+	// fails the validator, and only the rules of the core add keywords.
+	api := tyr.New(tyr.WithLogger(slog.New(slog.DiscardHandler)), tyr.WithValidator(phoneValidator{}))
+	api.Handle("calls.start", func(ctx context.Context, req phoneReq) (struct{}, error) { return struct{}{}, nil },
+		rest.Route("POST /calls"))
+	rec := do(rest.Mount(http.NewServeMux(), api).OpenAPI(tyr.Info{Title: "calls", Version: "1.0.0"}), "GET", "/openapi.json", "", "")
+	var doc struct {
+		Paths map[string]map[string]struct {
+			RequestBody struct {
+				Content map[string]struct {
+					Schema jsontext.Value `json:"schema"`
+				} `json:"content"`
+			} `json:"requestBody"`
+		} `json:"paths"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	got := string(doc.Paths["/calls"]["post"].RequestBody.Content["application/json"].Schema)
+	const want = `{"type":"object","properties":{"phone":{"type":"string"},"name":{"type":"string","minLength":2}},"required":["phone"]}`
+	if compacted, err := jsontext.AppendFormat(nil, []byte(got)); err != nil || string(compacted) != want {
+		t.Errorf("the body = %s, want %s", compacted, want)
 	}
 }

@@ -9,8 +9,6 @@ import (
 	"reflect"
 	"runtime/debug"
 	"time"
-
-	"github.com/tyr-go/tyr/internal/plan"
 )
 
 // OpOption configures an operation when it is registered, e.g. with the
@@ -35,9 +33,9 @@ type Operation struct {
 	check  func(res any) error                           // checks that the chain returned a Res
 }
 
-// newOperation returns an operation of a that checks requests against
-// validation, if any, and passes them to h.
-func newOperation[Req, Res any](a *API, name string, h Handler[Req, Res], validation *plan.Validation) *Operation {
+// newOperation returns an operation of a that checks requests with
+// validate, their validate tags, if they have any, and passes them to h.
+func newOperation[Req, Res any](a *API, name string, h Handler[Req, Res], validate func(req any) (Violations, error)) *Operation {
 	_, validates := any((*Req)(nil)).(Validator)
 	nilable := canBeNil(reflect.TypeFor[Res]())
 	return &Operation{
@@ -63,9 +61,13 @@ func newOperation[Req, Res any](a *API, name string, h Handler[Req, Res], valida
 			if !ok || r == nil {
 				return nil, Internal("internal error").WithCause(wrongRequest[Req](req))
 			}
-			if validation != nil {
-				if vs := validation.Validate(reflect.ValueOf(r).Elem()); len(vs) > 0 {
-					return nil, violationsOf(vs).Err()
+			if validate != nil {
+				vs, err := validate(r)
+				if err != nil {
+					return nil, Internal("internal error").WithCause(err)
+				}
+				if len(vs) > 0 {
+					return nil, vs.Err()
 				}
 			}
 			if validates {

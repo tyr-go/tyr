@@ -5,7 +5,10 @@ import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -219,4 +222,52 @@ func ExampleDiscover() {
 	// param code, required: true
 	// error -32602: invalid argument
 	// error 404: not found
+}
+
+// phoneReq has a rule that the core doesn't know, for a validator of its
+// own.
+type phoneReq struct {
+	Phone string `json:"phone" validate:"e164"`
+	Name  string `json:"name" validate:"omitempty,min=2,alphaunicode"`
+}
+
+// phoneValidator is a TagValidator by which a phoneReq without a phone
+// fails at it.
+type phoneValidator struct{}
+
+func (phoneValidator) Plan(t reflect.Type) (func(req any) []tyr.FailedRule, error) {
+	return func(req any) []tyr.FailedRule {
+		if r, ok := req.(*phoneReq); ok && r.Phone == "" {
+			return []tyr.FailedRule{{Path: []string{"Phone"}, Rule: "e164"}}
+		}
+		return nil
+	}, nil
+}
+
+func TestDiscoverWithValidator(t *testing.T) {
+	// With a validator of its own, a param is required as a zero value
+	// fails the validator, and only the rules of the core add keywords.
+	api := tyr.New(tyr.WithLogger(slog.New(slog.DiscardHandler)), tyr.WithValidator(phoneValidator{}))
+	api.Handle("calls.start", func(ctx context.Context, req phoneReq) (struct{}, error) { return struct{}{}, nil })
+	var doc struct {
+		Methods []struct {
+			Params []struct {
+				Name     string         `json:"name"`
+				Required bool           `json:"required"`
+				Schema   jsontext.Value `json:"schema"`
+			} `json:"params"`
+		} `json:"methods"`
+	}
+	if err := json.Unmarshal(discover(t, jsonrpc.Handler(api, jsonrpc.Discover(tyr.Info{Title: "calls", Version: "1.0.0"}))), &doc); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, p := range doc.Methods[0].Params {
+		schema, _ := jsontext.AppendFormat(nil, p.Schema)
+		got = append(got, fmt.Sprintf("%s %v %s", p.Name, p.Required, schema))
+	}
+	want := []string{`phone true {"type":"string"}`, `name false {"type":"string","minLength":2}`}
+	if !slices.Equal(got, want) {
+		t.Errorf("params = %q, want %q", got, want)
+	}
 }

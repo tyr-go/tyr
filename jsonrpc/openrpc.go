@@ -10,6 +10,7 @@ import (
 	"github.com/tyr-go/tyr"
 	"github.com/tyr-go/tyr/internal/jsonschema"
 	"github.com/tyr-go/tyr/internal/plan"
+	"github.com/tyr-go/tyr/internal/tagcheck"
 )
 
 // discoverMethod is the method that answers with the OpenRPC document of
@@ -77,6 +78,7 @@ type (
 // result that JSON can't carry.
 func openRPCOf(api *tyr.API, info tyr.Info) jsontext.Value {
 	schemas := plan.NewSchemas("#/components/schemas/")
+	schemas.SetFailing(tagcheck.Failing(api.Validator()))
 	doc := &openRPCDoc{
 		OpenRPC: openRPCVersion,
 		Info:    openRPCInfo{Title: info.Title, Description: info.Description, Version: info.Version},
