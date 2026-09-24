@@ -20,10 +20,13 @@ import (
 // [tyr.RequestInfo] that Logger puts in the request context, so middleware
 // between Logger and the transport may pass on another request, as
 // [http.Request.WithContext] makes. A handler outside tyr records nothing:
-// its route is the pattern of the [http.ServeMux] that matched the request,
-// empty if none did, which the mux sets in the request it gets, and Logger
-// reads it from the request it passes on. Middleware in between that passes
-// on another request hides that route from Logger. So when a request
+// its route is the pattern of the [http.ServeMux] below Logger that matched
+// the request, empty if none did, which the mux sets in the request it
+// gets, and Logger reads it from the request it passes on. That request
+// doesn't have the pattern of a mux above Logger, such as one that serves
+// probes past the middleware: the pattern "/" of the rest isn't their
+// route. Middleware in between that passes on another request hides the
+// route from Logger. So when a request
 // succeeds, with a 2xx or 3xx status, with neither a route nor an
 // operation, Logger warns once, at the first such request: "middleware:
 // request without a route", with a hint. Requests that a mux or a
@@ -43,6 +46,7 @@ func Logger(l *slog.Logger) func(http.Handler) http.Handler {
 			start := time.Now()
 			ctx, info := tyr.WithRequestInfo(r.Context())
 			r = r.WithContext(ctx)
+			r.Pattern = "" // that of a mux above: the route is that of the mux below
 			ww, state := wrap(w)
 			returned := false
 			defer func() {

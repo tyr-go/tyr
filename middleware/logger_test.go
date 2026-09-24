@@ -254,3 +254,62 @@ func TestLoggerWarnsOfHiddenRoute(t *testing.T) {
 		})
 	}
 }
+
+func TestLoggerOuterMux(t *testing.T) {
+	// A mux above Logger, as one that serves probes past the middleware,
+	// sets its pattern in the request, "/" for the rest; that isn't the
+	// route of the request, which is the pattern of the mux below.
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /links/{code}", func(w http.ResponseWriter, r *http.Request) {})
+	tests := []struct {
+		name      string
+		below     []func(http.Handler) http.Handler // the middleware under Logger
+		method    string
+		target    string
+		header    []string // pairs of names and values
+		wantRoute string
+		warning   bool
+	}{
+		{name: "route", method: "GET", target: "/links/go", wantRoute: "GET /links/{code}"},
+		{name: "no route for the path", method: "GET", target: "/nowhere"},
+		{
+			name: "rejected under Logger", below: []func(http.Handler) http.Handler{http.NewCrossOriginProtection().Handler},
+			method: "POST", target: "/links/go", header: []string{"Sec-Fetch-Site", "cross-site"},
+		},
+		{
+			name: "preflight that CORS answers", below: []func(http.Handler) http.Handler{middleware.CORS{Origins: []string{app}}.Handler},
+			method: "OPTIONS", target: "/links/go", header: []string{"Origin", app, "Access-Control-Request-Method", "POST"},
+		},
+		{name: "hidden route", below: []func(http.Handler) http.Handler{withValue}, method: "GET", target: "/links/go", warning: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logs := &logs{}
+			root := http.NewServeMux()
+			root.HandleFunc("GET /livez", func(w http.ResponseWriter, r *http.Request) {})
+			root.Handle("/", middleware.Chain(mux, append([]func(http.Handler) http.Handler{middleware.Logger(slog.New(logs))}, tt.below...)...))
+			req := httptest.NewRequest(tt.method, tt.target, nil)
+			for i := 0; i+1 < len(tt.header); i += 2 {
+				req.Header.Set(tt.header[i], tt.header[i+1])
+			}
+			root.ServeHTTP(httptest.NewRecorder(), req)
+
+			var routes []string
+			warnings := 0
+			for _, r := range logs.get() {
+				switch r.msg {
+				case "middleware: request":
+					routes = append(routes, r.attrs["route"])
+				case "middleware: request without a route":
+					warnings++
+				}
+			}
+			if len(routes) != 1 || routes[0] != tt.wantRoute {
+				t.Errorf("routes = %q, want %q", routes, tt.wantRoute)
+			}
+			if want := map[bool]int{true: 1}[tt.warning]; warnings != want {
+				t.Errorf("%d warnings of a request without a route, want %d", warnings, want)
+			}
+		})
+	}
+}
