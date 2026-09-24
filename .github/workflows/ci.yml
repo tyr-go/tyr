@@ -54,14 +54,26 @@ jobs:
         run: |
           go vet ./...
           go test -race ./...
-          golangci-lint run ./...
+
+      - name: golangci-lint oteltyr
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.2
+          install-mode: goinstall
+          working-directory: oteltyr
 
       - name: validate/playground
         working-directory: validate/playground
         run: |
           go vet ./...
           go test -race ./...
-          golangci-lint run ./...
+
+      - name: golangci-lint validate/playground
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.2
+          install-mode: goinstall
+          working-directory: validate/playground
 
       - name: internal/playgroundtest
         working-directory: internal/playgroundtest
