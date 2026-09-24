@@ -1,1 +1,1 @@
-{"type":"about:blank","title":"Client Closed Request","status":499,"detail":"canceled","kind":"canceled"}
+{"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindCanceled","title":"Canceled","status":499,"detail":"canceled","kind":"canceled"}

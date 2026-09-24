@@ -1,1 +1,1 @@
-{"type":"about:blank","title":"Bad Request","status":400,"detail":"validation failed","kind":"invalid_argument","errors":[{"pointer":"","detail":"must be an object"}]}
+{"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindInvalidArgument","title":"Invalid Argument","status":400,"detail":"validation failed","kind":"invalid_argument","errors":[{"pointer":"","detail":"must be an object"}]}

@@ -1,1 +1,1 @@
-{"type":"about:blank","title":"Bad Request","status":400,"detail":"validation failed","kind":"invalid_argument","errors":[{"pointer":"/limit","detail":"query parameter \"limit\": must be an integer from -9223372036854775808 to 9223372036854775807"}]}
+{"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindInvalidArgument","title":"Invalid Argument","status":400,"detail":"validation failed","kind":"invalid_argument","errors":[{"pointer":"/limit","detail":"query parameter \"limit\": must be an integer from -9223372036854775808 to 9223372036854775807"}]}

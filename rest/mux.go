@@ -53,7 +53,7 @@ func (p *problemWriter) WriteHeader(status int) {
 	case p.problem:
 	case !p.sent && (status == http.StatusNotFound || status == http.StatusMethodNotAllowed):
 		p.problem = true
-		writeProblem(p.ctx, slog.Default(), p.ResponseWriter, problem{Status: status})
+		writeProblem(p.ctx, slog.Default(), p.ResponseWriter, blank(status, ""))
 	default:
 		p.sent = true
 		p.ResponseWriter.WriteHeader(status)

@@ -99,8 +99,8 @@ func ExampleInterceptor() {
 		}
 	}
 	// Output:
-	// 401 {"type":"about:blank","title":"Unauthorized","status":401,"detail":"log in first","kind":"unauthenticated"}
+	// 401 {"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindUnauthenticated","title":"Unauthenticated","status":401,"detail":"log in first","kind":"unauthenticated"}
 	// WWW-Authenticate: Bearer realm="links"
-	// 403 {"type":"about:blank","title":"Forbidden","status":403,"detail":"requires one of [admin]","kind":"permission_denied"}
+	// 403 {"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindPermissionDenied","title":"Permission Denied","status":403,"detail":"requires one of [admin]","kind":"permission_denied"}
 	// 200 "purged"
 }

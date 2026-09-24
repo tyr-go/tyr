@@ -72,13 +72,23 @@
 //   - deadline_exceeded: 504
 //   - internal and unknown kinds: 500
 //
-// The problem's detail is the error's message and its kind is the kind's
-// name. [tyr.Violations] go in its errors member, other details in its
-// details member. An internal error, and one of a kind rest doesn't know,
-// has the detail "internal error", the kind internal and no details: its
-// message and details are for the logs, where the API writes them. A 401
-// carries the WWW-Authenticate challenges of [Challenge]. 413 and 415 have
-// no kind: they are about the HTTP request, and the operation isn't called.
+// The problem's type identifies the kind, and clients may tell errors apart
+// by it: by default, it is the documentation of the kind, such as
+// https://pkg.go.dev/github.com/tyr-go/tyr#KindNotFound, and [ProblemTypes]
+// gives the kinds URIs of the service's own. The title names the kind, such
+// as Not Found or Already Exists, the detail is the error's message, and
+// the kind member is the kind's name:
+//
+//	{"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindNotFound","title":"Not Found","status":404,
+//	 "detail":"link not found","kind":"not_found"}
+//
+// [tyr.Violations] go in its errors member, other details in its details
+// member. An internal error, and one of a kind rest doesn't know, has the
+// detail "internal error", the kind internal and no details: its message
+// and details are for the logs, where the API writes them. A 401 carries
+// the WWW-Authenticate challenges of [Challenge]. 413 and 415 have no kind:
+// they are about the HTTP request, and the operation isn't called, so their
+// type is about:blank, which means nothing beyond the status.
 //
 // A result or details that can't be encoded, or a redirect without a
 // Location, are a bug of the server: they are logged with
@@ -99,6 +109,7 @@ package rest
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/tyr-go/tyr"
@@ -164,24 +175,59 @@ func MaxBodyBytes(n int64) tyr.OpOption {
 	return limitKey.Option(n)
 }
 
-// MountOption configures [Mount].
+// MountOption configures [Mount]. [WriteError] takes the options of Mount
+// too, so that it writes errors as the operations do.
 type MountOption func(*mount)
 
 // mount is the configuration of Mount.
 type mount struct {
-	challenges []string // of WWW-Authenticate
+	challenges  []string // of WWW-Authenticate
+	problemBase string   // of the types of problems; "" for the default
+}
+
+// newMount returns the configuration that opts make; call names the
+// function they were passed to in panics.
+func newMount(call string, opts []MountOption) *mount {
+	m := &mount{}
+	for _, opt := range opts {
+		if opt == nil {
+			panic("rest: " + call + ": nil option")
+		}
+		opt(m)
+	}
+	return m
 }
 
 // Challenge makes the 401 Unauthorized responses of the operations that
-// [Mount] serves carry the challenge in a WWW-Authenticate header, as RFC
-// 9110 requires, e.g. `Bearer realm="shortlink"`; each Challenge adds one.
-// Challenge panics if the challenge is empty or has a line break.
+// [Mount] serves, and of [WriteError] given the option, carry the challenge
+// in a WWW-Authenticate header, as RFC 9110 requires, e.g.
+// `Bearer realm="shortlink"`; each Challenge adds one. Challenge panics if
+// the challenge is empty or has a line break.
 func Challenge(challenge string) MountOption {
 	if challenge == "" || strings.ContainsAny(challenge, "\r\n") {
 		panic(fmt.Sprintf("rest: Challenge(%q): want a challenge without line breaks", challenge))
 	}
 	return func(m *mount) {
 		m.challenges = append(m.challenges, challenge)
+	}
+}
+
+// ProblemTypes sets the base of the URIs that identify the problem types of
+// kinds: the type of the problems of kind not_found becomes base+"not_found".
+// The base must be an absolute URI that ends in "/" or "#", such as
+// "https://shortlink.example/problems/"; ProblemTypes panics otherwise.
+//
+// Without ProblemTypes, the type of a kind is its documentation, such as
+// https://pkg.go.dev/github.com/tyr-go/tyr#KindNotFound. Clients may tell
+// errors apart by their types, so the types are part of the API of a
+// service: pass the same ProblemTypes wherever it writes errors.
+func ProblemTypes(base string) MountOption {
+	u, err := url.Parse(base)
+	if err != nil || !u.IsAbs() || !strings.HasSuffix(base, "/") && !strings.HasSuffix(base, "#") {
+		panic(fmt.Sprintf("rest: ProblemTypes(%q): want an absolute URI that ends in / or #", base))
+	}
+	return func(m *mount) {
+		m.problemBase = base
 	}
 }
 
@@ -199,19 +245,13 @@ func Mount(mux *http.ServeMux, api *tyr.API, opts ...MountOption) {
 	if mux == nil || api == nil {
 		panic("rest: Mount: nil mux or API")
 	}
-	var m mount
-	for _, opt := range opts {
-		if opt == nil {
-			panic("rest: Mount: nil option")
-		}
-		opt(&m)
-	}
+	m := newMount("Mount", opts)
 	api.Seal()
 	for op := range api.Operations() {
 		pattern, ok := RouteOf(op)
 		if !ok {
 			continue
 		}
-		handle(mux, op, pattern, newHandler(api, op, pattern, &m))
+		handle(mux, op, pattern, newHandler(api, op, pattern, m))
 	}
 }

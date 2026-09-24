@@ -1,1 +1,1 @@
-{"type":"about:blank","title":"Service Unavailable","status":503,"detail":"try again later","kind":"unavailable"}
+{"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindUnavailable","title":"Unavailable","status":503,"detail":"try again later","kind":"unavailable"}

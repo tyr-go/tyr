@@ -46,7 +46,7 @@ curl localhost:8080/links/golang
 # => 200 {"code":"golang","url":"https://go.dev"}
 
 curl localhost:8080/links/x
-# => 400 {"type":"about:blank","title":"Bad Request","status":400,"detail":"validation failed","kind":"invalid_argument","errors":[{"pointer":"/code","detail":"must be at least 4 characters"}]}
+# => 400 {"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindInvalidArgument","title":"Invalid Argument","status":400,"detail":"validation failed","kind":"invalid_argument","errors":[{"pointer":"/code","detail":"must be at least 4 characters"}]}
 
 curl localhost:8080/rpc -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","method":"links.get","params":{"code":"golang"},"id":1}'
@@ -102,7 +102,7 @@ Týr, the Norse god of law and oaths, put his hand in Fenrir's jaws as the pledg
 
 ### [Return an error](https://pkg.go.dev/github.com/tyr-go/tyr/rest#example-Mount)
 
-A handler returns a `*tyr.Error` of a kind, and REST sends it as RFC 9457 `application/problem+json` with the status of the kind:
+A handler returns a `*tyr.Error` of a kind, and REST sends it as RFC 9457 `application/problem+json` with the type, the title and the status of the kind. By default, the type is the documentation of the kind; [`rest.ProblemTypes`](https://pkg.go.dev/github.com/tyr-go/tyr/rest#ProblemTypes) gives the kinds URIs of the service's own:
 
 <!-- Output: rest.ExampleMount -->
 ```go
@@ -116,7 +116,7 @@ api.Handle("links.get", func(ctx context.Context, req GetLinkReq) (string, error
 // GET /links/go
 // => 200 "https://go.dev"
 // GET /links/rust
-// => 404 {"type":"about:blank","title":"Not Found","status":404,"detail":"link \"rust\" not found","kind":"not_found"}
+// => 404 {"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindNotFound","title":"Not Found","status":404,"detail":"link \"rust\" not found","kind":"not_found"}
 ```
 
 ### [Translate the errors of other packages](https://pkg.go.dev/github.com/tyr-go/tyr#example-API.MapError)
@@ -133,9 +133,9 @@ api.MapError(func(err error) error {
 })
 
 // GET /links/rust, whose handler returns errNotFound
-// => 404 {"type":"about:blank","title":"Not Found","status":404,"detail":"link not found","kind":"not_found"}
+// => 404 {"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindNotFound","title":"Not Found","status":404,"detail":"link not found","kind":"not_found"}
 // GET /links/db, whose handler returns errors.New("db: connection refused")
-// => 500 {"type":"about:blank","title":"Internal Server Error","status":500,"detail":"internal error","kind":"internal"}
+// => 500 {"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindInternal","title":"Internal Error","status":500,"detail":"internal error","kind":"internal"}
 ```
 
 ### [Validate a request](https://pkg.go.dev/github.com/tyr-go/tyr#example-package-Validation)
@@ -158,9 +158,9 @@ func (r CreateLinkReq) Validate() error {
 }
 
 // POST /links {"url":"ftp://go.dev","code":"go"}
-// => 400 {"type":"about:blank","title":"Bad Request","status":400,"detail":"validation failed","kind":"invalid_argument","errors":[{"pointer":"/url","detail":"must be an http or https URL"},{"pointer":"/code","detail":"must be at least 4 characters"}]}
+// => 400 {"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindInvalidArgument","title":"Invalid Argument","status":400,"detail":"validation failed","kind":"invalid_argument","errors":[{"pointer":"/url","detail":"must be an http or https URL"},{"pointer":"/code","detail":"must be at least 4 characters"}]}
 // POST /links {"url":"https://go.dev","code":"Go!!"}
-// => 400 {"type":"about:blank","title":"Bad Request","status":400,"detail":"validation failed","kind":"invalid_argument","errors":[{"pointer":"/code","detail":"only a-z, 0-9 and '-'"}]}
+// => 400 {"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindInvalidArgument","title":"Invalid Argument","status":400,"detail":"validation failed","kind":"invalid_argument","errors":[{"pointer":"/code","detail":"only a-z, 0-9 and '-'"}]}
 ```
 
 Validation runs after the interceptors, so a client that isn't allowed to call an operation learns that, not what's wrong with its request.
@@ -196,10 +196,10 @@ admin.Handle("links.purge", Purge, rest.Route("POST /links/purge"))
 rest.Mount(mux, api, rest.Challenge(`Bearer realm="links"`))
 
 // POST /links/purge without a token
-// => 401 {"type":"about:blank","title":"Unauthorized","status":401,"detail":"log in first","kind":"unauthenticated"}
+// => 401 {"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindUnauthenticated","title":"Unauthenticated","status":401,"detail":"log in first","kind":"unauthenticated"}
 // => WWW-Authenticate: Bearer realm="links"
 // POST /links/purge with a user's token
-// => 403 {"type":"about:blank","title":"Forbidden","status":403,"detail":"requires one of [admin]","kind":"permission_denied"}
+// => 403 {"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindPermissionDenied","title":"Permission Denied","status":403,"detail":"requires one of [admin]","kind":"permission_denied"}
 // POST /links/purge with the admin's token
 // => 200 "purged"
 ```

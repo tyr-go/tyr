@@ -49,6 +49,6 @@ func Example_quickstart() {
 	}
 	// Output:
 	// 200 {"code":"golang","url":"https://go.dev"}
-	// 400 {"type":"about:blank","title":"Bad Request","status":400,"detail":"validation failed","kind":"invalid_argument","errors":[{"pointer":"/code","detail":"must be at least 4 characters"}]}
+	// 400 {"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindInvalidArgument","title":"Invalid Argument","status":400,"detail":"validation failed","kind":"invalid_argument","errors":[{"pointer":"/code","detail":"must be at least 4 characters"}]}
 	// 200 {"jsonrpc":"2.0","result":{"code":"golang","url":"https://go.dev"},"id":1}
 }

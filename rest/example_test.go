@@ -34,7 +34,26 @@ func ExampleMount() {
 	}
 	// Output:
 	// 200 "https://go.dev"
-	// 404 {"type":"about:blank","title":"Not Found","status":404,"detail":"link \"rust\" not found","kind":"not_found"}
+	// 404 {"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindNotFound","title":"Not Found","status":404,"detail":"link \"rust\" not found","kind":"not_found"}
+}
+
+func ExampleProblemTypes() {
+	api := tyr.New()
+	api.Handle("links.create", func(ctx context.Context, req struct{}) (struct{}, error) {
+		return struct{}{}, tyr.AlreadyExists("code is taken")
+	}, rest.Route("POST /links"))
+
+	// The kinds get URIs of the service's own. Handlers outside operations
+	// pass the same options to WriteError.
+	opts := []rest.MountOption{rest.ProblemTypes("https://shortlink.example/problems/")}
+	mux := http.NewServeMux()
+	rest.Mount(mux, api, opts...)
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("POST", "/links", nil))
+	fmt.Println(rec.Code, rec.Body)
+	// Output:
+	// 409 {"type":"https://shortlink.example/problems/already_exists","title":"Already Exists","status":409,"detail":"code is taken","kind":"already_exists"}
 }
 
 func ExampleStatus() {

@@ -20,15 +20,15 @@ import (
 
 // handler serves one operation.
 type handler struct {
-	api        *tyr.API // logs with its Logger
-	op         *tyr.Operation
-	pattern    string // that the handler is mounted at
-	binding    *plan.Binding
-	headers    *plan.Headers // that results set
-	status     int           // of a successful response
-	noBody     bool          // for a redirect or a result without JSON members
-	limit      int64         // of the request body
-	challenges []string      // of the WWW-Authenticate of 401
+	api     *tyr.API // logs with its Logger
+	op      *tyr.Operation
+	pattern string // that the handler is mounted at
+	mount   *mount // the options of Mount, for errors
+	binding *plan.Binding
+	headers *plan.Headers // that results set
+	status  int           // of a successful response
+	noBody  bool          // for a redirect or a result without JSON members
+	limit   int64         // of the request body
 }
 
 // newHandler returns the handler of op of api at pattern, mounted with m. It
@@ -62,8 +62,8 @@ func newHandler(api *tyr.API, op *tyr.Operation, pattern string, m *mount) *hand
 		panicf(op, "%v", err)
 	}
 	h := &handler{
-		api: api, op: op, pattern: pattern, binding: b, headers: headers,
-		status: http.StatusOK, limit: defaultLimit, challenges: m.challenges,
+		api: api, op: op, pattern: pattern, mount: m, binding: b, headers: headers,
+		status: http.StatusOK, limit: defaultLimit,
 	}
 	if h.noBody = plan.NoMembers(res); h.noBody {
 		h.status = http.StatusNoContent
@@ -126,17 +126,13 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := tyr.WithOperation(r.Context(), h.op)
 	body, readErr := io.ReadAll(http.MaxBytesReader(w, r.Body, h.limit))
 	if _, ok := errors.AsType[*http.MaxBytesError](readErr); ok {
-		writeProblem(ctx, h.api.Logger(), w, problem{
-			Status: http.StatusRequestEntityTooLarge,
-			Detail: fmt.Sprintf("request body is larger than %d bytes", h.limit),
-		})
+		writeProblem(ctx, h.api.Logger(), w, blank(http.StatusRequestEntityTooLarge,
+			fmt.Sprintf("request body is larger than %d bytes", h.limit)))
 		return
 	}
 	if len(body) > 0 && !jsonreq.IsJSON(r.Header.Get("Content-Type")) {
-		writeProblem(ctx, h.api.Logger(), w, problem{
-			Status: http.StatusUnsupportedMediaType,
-			Detail: "request body must be JSON: application/json or a +json type",
-		})
+		writeProblem(ctx, h.api.Logger(), w, blank(http.StatusUnsupportedMediaType,
+			"request body must be JSON: application/json or a +json type"))
 		return
 	}
 
@@ -148,7 +144,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		e, _ := err.(*tyr.Error) // Call returns only those
-		writeError(ctx, h.api.Logger(), w, e, h.challenges)
+		writeError(ctx, h.api.Logger(), w, e, h.mount)
 		return
 	}
 	h.writeResult(ctx, w, res)
@@ -192,7 +188,7 @@ func (h *handler) decode(dst any, body []byte, r *http.Request) error {
 func (h *handler) writeResult(ctx context.Context, w http.ResponseWriter, res any) {
 	fail := func(msg string, args ...any) {
 		h.api.Logger().ErrorContext(ctx, msg, args...)
-		writeError(ctx, h.api.Logger(), w, tyr.Internal("internal error"), nil)
+		writeError(ctx, h.api.Logger(), w, tyr.Internal("internal error"), h.mount)
 	}
 	header, err := h.headers.Of(reflect.ValueOf(res))
 	if err != nil {

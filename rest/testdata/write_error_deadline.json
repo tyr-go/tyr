@@ -1,1 +1,1 @@
-{"type":"about:blank","title":"Gateway Timeout","status":504,"detail":"deadline exceeded","kind":"deadline_exceeded"}
+{"type":"https://pkg.go.dev/github.com/tyr-go/tyr#KindDeadlineExceeded","title":"Deadline Exceeded","status":504,"detail":"deadline exceeded","kind":"deadline_exceeded"}

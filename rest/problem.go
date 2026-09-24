@@ -24,22 +24,33 @@ type problem struct {
 	Details any            `json:"details,omitempty"`
 }
 
+// blank returns the problem of an HTTP request itself, of status, with
+// detail: its type is about:blank, which means nothing beyond the status,
+// and its title is the reason phrase of the status.
+func blank(status int, detail string) problem {
+	return problem{Type: "about:blank", Title: statusText(status), Status: status, Detail: detail}
+}
+
 // WriteError writes err as REST writes the error of an operation: as
-// application/problem+json with the status of its kind, for handlers
-// outside operations. An err that contains a [tyr.Error] is written as is.
-// Otherwise, as [tyr.Operation.Call] does for errors no mapper translates,
-// a [context.DeadlineExceeded] becomes [tyr.KindDeadlineExceeded], a
+// application/problem+json with the type, the title and the status of its
+// kind, for handlers outside operations. opts are those of [Mount]: given
+// the same options, WriteError writes the types of [ProblemTypes] and the
+// WWW-Authenticate challenges of [Challenge] as the operations do.
+//
+// An err that contains a [tyr.Error] is written as is. Otherwise, as
+// [tyr.Operation.Call] does for errors no mapper translates, a
+// [context.DeadlineExceeded] becomes [tyr.KindDeadlineExceeded], a
 // [context.Canceled] becomes [tyr.KindCanceled] if the context of r is
 // canceled too, and any other error, a nil *tyr.Error too,
 // [tyr.KindInternal] with a generic message. An internal error, or one of
 // a kind rest doesn't know, reaches the client as "internal error" only,
 // and WriteError logs it to [slog.Default] with the context of r, with its
-// message, cause and details. WriteError doesn't add the WWW-Authenticate
-// of [Challenge] to a 401. It panics if err is nil.
-func WriteError(w http.ResponseWriter, r *http.Request, err error) {
+// message, cause and details. WriteError panics if err or an option is nil.
+func WriteError(w http.ResponseWriter, r *http.Request, err error, opts ...MountOption) {
 	if err == nil {
 		panic("rest: WriteError: nil error")
 	}
+	m := newMount("WriteError", opts)
 	e, ok := errors.AsType[*tyr.Error](err)
 	switch {
 	case ok && e == nil: // a nil *tyr.Error, returned as an error by mistake
@@ -58,29 +69,34 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 		}
 		slog.Default().ErrorContext(r.Context(), "rest: internal error", args...)
 	}
-	writeError(r.Context(), slog.Default(), w, e, nil)
+	writeError(r.Context(), slog.Default(), w, e, m)
 }
 
 // WriteProblem writes a problem of the HTTP request itself, as
 // application/problem+json without a kind, like the 413 and 415 of
-// [Mount]: {"type":"about:blank","title":"Forbidden","status":403}.
-// It panics unless status is a 4xx or 5xx one.
+// [Mount]: {"type":"about:blank","title":"Forbidden","status":403}. Its
+// type, about:blank, means nothing beyond the status. WriteProblem panics
+// unless status is a 4xx or 5xx one.
 func WriteProblem(w http.ResponseWriter, status int) {
 	if status < 400 || status > 599 {
 		panic(fmt.Sprintf("rest: WriteProblem(%d): want a 4xx or 5xx status", status))
 	}
-	writeProblem(context.Background(), slog.Default(), w, problem{Status: status})
+	writeProblem(context.Background(), slog.Default(), w, blank(status, ""))
 }
 
-// writeError sends e as a problem, or an internal error if e is nil. An
-// internal error, or one of a kind rest doesn't know, is sent without its
-// message and details, which are for the logs. A 401 gets a
-// WWW-Authenticate header per challenge. logger logs details that can't be
-// encoded.
-func writeError(ctx context.Context, logger *slog.Logger, w http.ResponseWriter, e *tyr.Error, challenges []string) {
-	p := problem{Status: http.StatusInternalServerError, Detail: "internal error", Kind: tyr.KindInternal.String()}
+// writeError sends e as the problem of its kind, or an internal error if e
+// is nil, as m configures. An internal error, or one of a kind rest doesn't
+// know, is sent without its message and details, which are for the logs. A
+// 401 gets a WWW-Authenticate header per challenge of m. logger logs
+// details that can't be encoded.
+func writeError(ctx context.Context, logger *slog.Logger, w http.ResponseWriter, e *tyr.Error, m *mount) {
+	k, detail := tyr.KindInternal, "internal error"
 	if e != nil && !internal(e.Kind) {
-		p.Status, p.Detail, p.Kind = statusOf(e.Kind), e.Message, e.Kind.String()
+		k, detail = e.Kind, e.Message
+	}
+	_, title := kindType(k)
+	p := problem{Type: m.problemType(k), Title: title, Status: statusOf(k), Detail: detail, Kind: k.String()}
+	if k != tyr.KindInternal {
 		if v, ok := e.Details.(tyr.Violations); ok {
 			p.Errors = v
 		} else {
@@ -88,11 +104,56 @@ func writeError(ctx context.Context, logger *slog.Logger, w http.ResponseWriter,
 		}
 	}
 	if p.Status == http.StatusUnauthorized {
-		for _, c := range challenges {
+		for _, c := range m.challenges {
 			w.Header().Add("WWW-Authenticate", c)
 		}
 	}
 	writeProblem(ctx, logger, w, p)
+}
+
+// defaultProblemTypes is the base of the types of problems without
+// ProblemTypes: the documentation of package tyr, where the constant of
+// every kind has an anchor.
+const defaultProblemTypes = "https://pkg.go.dev/github.com/tyr-go/tyr#"
+
+// problemType returns the type of the problems of kind k, which rest
+// knows: the base of ProblemTypes with the name of k or, by default, the
+// documentation of k.
+func (m *mount) problemType(k tyr.Kind) string {
+	if m.problemBase != "" {
+		return m.problemBase + k.String()
+	}
+	constant, _ := kindType(k)
+	return defaultProblemTypes + constant
+}
+
+// kindType returns the name of the constant of kind k in package tyr, whose
+// documentation is the default type of the problems of k, and the title of
+// that type. A kind rest doesn't know is internal.
+func kindType(k tyr.Kind) (constant, title string) {
+	switch k {
+	case tyr.KindInvalidArgument:
+		return "KindInvalidArgument", "Invalid Argument"
+	case tyr.KindUnauthenticated:
+		return "KindUnauthenticated", "Unauthenticated"
+	case tyr.KindPermissionDenied:
+		return "KindPermissionDenied", "Permission Denied"
+	case tyr.KindNotFound:
+		return "KindNotFound", "Not Found"
+	case tyr.KindAlreadyExists:
+		return "KindAlreadyExists", "Already Exists"
+	case tyr.KindFailedPrecondition:
+		return "KindFailedPrecondition", "Failed Precondition"
+	case tyr.KindResourceExhausted:
+		return "KindResourceExhausted", "Resource Exhausted"
+	case tyr.KindCanceled:
+		return "KindCanceled", "Canceled"
+	case tyr.KindUnavailable:
+		return "KindUnavailable", "Unavailable"
+	case tyr.KindDeadlineExceeded:
+		return "KindDeadlineExceeded", "Deadline Exceeded"
+	}
+	return "KindInternal", "Internal Error"
 }
 
 // statusOf returns the HTTP status of errors of kind k.
@@ -140,12 +201,10 @@ func statusText(status int) string {
 	return http.StatusText(status)
 }
 
-// writeProblem sends p as application/problem+json, with the type and the
-// title filled in. Invalid UTF-8, which a message may carry, becomes
-// U+FFFD. Details that can't be encoded are a bug of the server: they're
-// logged to logger and left out.
+// writeProblem sends p as application/problem+json. Invalid UTF-8, which a
+// message may carry, becomes U+FFFD. Details that can't be encoded are a
+// bug of the server: they're logged to logger and left out.
 func writeProblem(ctx context.Context, logger *slog.Logger, w http.ResponseWriter, p problem) {
-	p.Type, p.Title = "about:blank", statusText(p.Status)
 	data, err := json.Marshal(p, jsontext.AllowInvalidUTF8(true))
 	if err != nil {
 		// Only details can fail to encode: send the problem without them.
@@ -156,7 +215,7 @@ func writeProblem(ctx context.Context, logger *slog.Logger, w http.ResponseWrite
 			// and with AllowInvalidUTF8 every string encodes. The line
 			// stays so that no later change to problem can bring back a
 			// truncated body.
-			data = minimalProblem(p.Status)
+			data = minimalProblem(p)
 		}
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
@@ -164,8 +223,14 @@ func writeProblem(ctx context.Context, logger *slog.Logger, w http.ResponseWrite
 	_, _ = w.Write(data)
 }
 
-// minimalProblem returns the problem of status with only the members that
-// every problem has, written without the JSON encoder.
-func minimalProblem(status int) []byte {
-	return []byte(`{"type":"about:blank","title":"` + statusText(status) + `","status":` + strconv.Itoa(status) + `}`)
+// minimalProblem returns p with only the members that every problem has,
+// written without the JSON encoder.
+func minimalProblem(p problem) []byte {
+	b := []byte(`{"type":`)
+	b, _ = jsontext.AppendQuote(b, p.Type) // invalid UTF-8 becomes U+FFFD, as above
+	b = append(b, `,"title":`...)
+	b, _ = jsontext.AppendQuote(b, p.Title)
+	b = append(b, `,"status":`...)
+	b = strconv.AppendInt(b, int64(p.Status), 10)
+	return append(b, '}')
 }

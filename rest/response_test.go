@@ -176,6 +176,65 @@ func TestChallenge(t *testing.T) {
 	}
 }
 
+func TestProblemTypes(t *testing.T) {
+	api := newAPI()
+	api.Handle("links.get", func(ctx context.Context, req getLinkReq) (*link, error) {
+		return nil, tyr.NotFound("link %q not found", req.Code)
+	}, rest.Route("GET /links/{code}"))
+	types := rest.ProblemTypes("https://shortlink.example/problems/")
+	mux := http.NewServeMux()
+	rest.Mount(mux, api, types)
+
+	const notFound = `{"type":"https://shortlink.example/problems/not_found","title":"Not Found","status":404,"detail":"link \"go\" not found","kind":"not_found"}`
+	if rec := do(mux, "GET", "/links/go", "", ""); rec.Code != http.StatusNotFound || rec.Body.String() != notFound {
+		t.Errorf("GET /links/go = %d %s, want 404 %s", rec.Code, rec.Body, notFound)
+	}
+
+	// WriteError writes the same types, given the same options; the last
+	// ProblemTypes wins.
+	rec := httptest.NewRecorder()
+	rest.WriteError(rec, httptest.NewRequest("GET", "/", nil), tyr.NotFound("link %q not found", "go"), types)
+	if rec.Body.String() != notFound {
+		t.Errorf("WriteError() with ProblemTypes = %s, want %s", rec.Body, notFound)
+	}
+	rec = httptest.NewRecorder()
+	rest.WriteError(rec, httptest.NewRequest("GET", "/", nil), tyr.AlreadyExists("code is taken"),
+		types, rest.ProblemTypes("https://shortlink.example/problems#"))
+	const taken = `{"type":"https://shortlink.example/problems#already_exists","title":"Already Exists","status":409,"detail":"code is taken","kind":"already_exists"}`
+	if rec.Body.String() != taken {
+		t.Errorf("WriteError() with two ProblemTypes = %s, want %s", rec.Body, taken)
+	}
+
+	// Without the / or the #, the name of a kind would run into the base.
+	for _, base := range []string{"", "https://shortlink.example/problems", "https://shortlink.example/problems/not_found", "/problems/", "problems#", ":/"} {
+		want := fmt.Sprintf("rest: ProblemTypes(%q): want an absolute URI that ends in / or #", base)
+		if got := panicValue(func() { rest.ProblemTypes(base) }); got != want {
+			t.Errorf("ProblemTypes(%q) panicked with %v, want %q", base, got, want)
+		}
+	}
+}
+
+func TestWriteErrorChallenge(t *testing.T) {
+	challenge := rest.Challenge(`Bearer realm="shortlink"`)
+	rec := httptest.NewRecorder()
+	rest.WriteError(rec, httptest.NewRequest("GET", "/", nil), tyr.Unauthenticated("log in first"), challenge)
+	if got := rec.Header().Values("WWW-Authenticate"); rec.Code != http.StatusUnauthorized || !slices.Equal(got, []string{`Bearer realm="shortlink"`}) {
+		t.Errorf("WriteError() = %d, WWW-Authenticate %q; want 401 with the challenge", rec.Code, got)
+	}
+	rec = httptest.NewRecorder()
+	rest.WriteError(rec, httptest.NewRequest("GET", "/", nil), tyr.PermissionDenied("admins only"), challenge)
+	if rec.Code != http.StatusForbidden || rec.Header().Get("WWW-Authenticate") != "" {
+		t.Errorf("WriteError() = %d, WWW-Authenticate %q; want 403 without it", rec.Code, rec.Header().Get("WWW-Authenticate"))
+	}
+
+	write := func() {
+		rest.WriteError(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil), tyr.NotFound("gone"), nil)
+	}
+	if got, want := panicValue(write), "rest: WriteError: nil option"; got != want {
+		t.Errorf("WriteError() with a nil option panicked with %v, want %q", got, want)
+	}
+}
+
 // Not parallel: it replaces the default logger, which WriteError logs to.
 func TestWriteError(t *testing.T) {
 	var buf bytes.Buffer
