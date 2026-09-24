@@ -77,8 +77,8 @@
 // # Client
 //
 // [Client] calls operations by their contracts, which [tyr.Define] makes
-// and the server shares with its clients, and turns the error of an
-// operation back into a [tyr.Error] of its kind:
+// and the server shares with its clients, and returns the error of an
+// operation as a [ServerError] with its kind, for the caller to translate:
 //
 //	c := jsonrpc.NewClient("http://links.internal/rpc", &http.Client{Timeout: 5 * time.Second})
 //	link, err := c.Call(ctx, contract.GetLink, contract.GetLinkReq{Code: "go"})

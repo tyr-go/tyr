@@ -248,7 +248,7 @@ mux.Handle("POST /rpc", jsonrpc.Handler(api))
 
 ### [Call an operation with a typed client](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#example-Client)
 
-A contract, made by `tyr.Define`, is a value that the server and its clients share. `Implement` doesn't compile unless the handler fits it, and `Call` takes its request type and returns its result type. An error of the server comes back as a `*tyr.Error` of its kind. Here `InProcess` serves the calls in memory, as in a test; another program passes an `http.Client` with a timeout and the URL of the service:
+A contract, made by `tyr.Define`, is a value that the server and its clients share. `Implement` doesn't compile unless the handler fits it, and `Call` takes its request type and returns its result type. An error of the server comes back as a `*jsonrpc.ServerError` with its kind. Here `InProcess` serves the calls in memory, as in a test; another program passes an `http.Client` with a timeout and the URL of the service:
 
 <!-- Output: jsonrpc.ExampleClient -->
 ```go
@@ -263,8 +263,10 @@ api.Implement(getLink, func(ctx context.Context, req GetLinkReq) (*Link, error) 
 
 c := jsonrpc.NewClient("http://links/rpc", jsonrpc.InProcess(jsonrpc.Handler(api)))
 link, err := c.Call(ctx, getLink, GetLinkReq{Code: code})
-if e, ok := errors.AsType[*tyr.Error](err); ok {
-	fmt.Println(e.Kind, e.Message, e.Details)
+if se, ok := errors.AsType[*jsonrpc.ServerError](err); ok && se.Details != nil {
+	fmt.Println(se.Kind, se.Message, se.Details) // what the server answered
+} else if ok {
+	fmt.Println(se.Kind, se.Message)
 } else if err != nil {
 	fmt.Println(err) // no answer that fits the call
 } else {
@@ -274,12 +276,12 @@ if e, ok := errors.AsType[*tyr.Error](err); ok {
 // code "go"
 // => https://go.dev
 // code "gone"
-// => not_found link "gone" not found <nil>
+// => not_found link "gone" not found
 // code "", which GetLinkReq requires
 // => invalid_argument validation failed [{"pointer":"/code","detail":"is required"}]
 ```
 
-Any other error of `Call`, such as a failed connection or a 503 of a load balancer, isn't a `*tyr.Error`: the documentation of [`Client`](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Client) shows how to report those as `unavailable`.
+A `ServerError` isn't a `*tyr.Error`: a handler that returns it as it is fails with `internal`, and the API logs what the other service answered. So a kind of another service reaches your clients only as you translate it, where you call it: its `unauthenticated` is about your credentials rather than theirs, and its violations point into a request they didn't send. The documentation of [`Client`](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Client) shows how, and how to report a failed connection or a 503 of a load balancer as `unavailable`.
 
 ### [Document an API](https://pkg.go.dev/github.com/tyr-go/tyr/rest#example-Routes.OpenAPI)
 

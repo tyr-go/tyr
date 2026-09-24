@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -37,8 +38,10 @@ func ExampleClient() {
 	c := jsonrpc.NewClient("http://links/rpc", jsonrpc.InProcess(jsonrpc.Handler(api)))
 	for _, code := range []string{"go", "gone", ""} {
 		link, err := c.Call(context.Background(), getLink, GetLinkReq{Code: code})
-		if e, ok := errors.AsType[*tyr.Error](err); ok {
-			fmt.Println(e.Kind, e.Message, e.Details)
+		if se, ok := errors.AsType[*jsonrpc.ServerError](err); ok && se.Details != nil {
+			fmt.Println(se.Kind, se.Message, se.Details) // what the server answered
+		} else if ok {
+			fmt.Println(se.Kind, se.Message)
 		} else if err != nil {
 			fmt.Println(err) // no answer that fits the call
 		} else {
@@ -47,8 +50,58 @@ func ExampleClient() {
 	}
 	// Output:
 	// https://go.dev
-	// not_found link "gone" not found <nil>
+	// not_found link "gone" not found
 	// invalid_argument validation failed [{"pointer":"/code","detail":"is required"}]
+}
+
+func ExampleServerError() {
+	type GetLinkReq struct {
+		Code string `json:"code" validate:"required"`
+	}
+	type Link struct {
+		Code string `json:"code"`
+		URL  string `json:"url"`
+	}
+	type ShowReq struct {
+		Page string `json:"page" path:"page"`
+	}
+
+	// Another service, which knows one link.
+	getLink := tyr.Define[GetLinkReq, *Link]("links.get")
+	links := tyr.New()
+	links.Implement(getLink, func(ctx context.Context, req GetLinkReq) (*Link, error) {
+		if req.Code != "go" {
+			return nil, tyr.NotFound("link %q not found", req.Code)
+		}
+		return &Link{Code: "go", URL: "https://go.dev"}, nil
+	})
+	lc := jsonrpc.NewClient("http://links/rpc", jsonrpc.InProcess(jsonrpc.Handler(links)))
+
+	// A service that calls it translates what means something to its own
+	// clients, and the rest is internal.
+	api := tyr.New(tyr.WithLogger(slog.New(slog.DiscardHandler)))
+	api.Handle("pages.show", func(ctx context.Context, req ShowReq) (string, error) {
+		link, err := lc.Call(ctx, getLink, GetLinkReq{Code: req.Page})
+		if se, ok := errors.AsType[*jsonrpc.ServerError](err); ok && se.Kind == tyr.KindNotFound {
+			return "", tyr.NotFound("no page for %q", req.Page).WithCause(err)
+		}
+		if err != nil {
+			return "", err // internal: the log gets what links answered
+		}
+		return "the page of " + link.URL, nil
+	}, rest.Route("GET /pages/{page...}"))
+	mux := http.NewServeMux()
+	rest.Mount(mux, api)
+
+	for _, target := range []string{"/pages/go", "/pages/gone", "/pages/"} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest("GET", target, nil))
+		fmt.Println(rec.Code, rec.Body)
+	}
+	// Output:
+	// 200 "the page of https://go.dev"
+	// 404 {"type":"/problems/not_found","title":"Not Found","status":404,"detail":"no page for \"gone\"","kind":"not_found"}
+	// 500 {"type":"/problems/internal","title":"Internal Error","status":500,"detail":"internal error","kind":"internal"}
 }
 
 func ExampleHandler() {

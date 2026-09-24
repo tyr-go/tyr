@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/tyr-go/tyr"
 	"github.com/tyr-go/tyr/jsonrpc"
+	"github.com/tyr-go/tyr/rest"
 )
 
 // echoOp is the contract of things.echo of echoAPI.
@@ -188,13 +190,20 @@ func TestClientErrors(t *testing.T) {
 			})
 			_, err := newClient(t, jsonrpc.Handler(api)).Call(t.Context(), get, struct{}{})
 
-			// What the server answered comes as it is, not wrapped.
-			e, ok := err.(*tyr.Error)
+			// What the server answered, wrapped with the name of the
+			// operation, and no *tyr.Error, which a handler would pass on.
+			se, ok := errors.AsType[*jsonrpc.ServerError](err)
 			if !ok {
-				t.Fatalf("Call() = %v (%T), want a *tyr.Error", err, err)
+				t.Fatalf("Call() = %v (%T), want a *jsonrpc.ServerError", err, err)
 			}
-			if e.Kind != tt.kind || e.Message != tt.message || !sameDetails(e.Details, tt.details) {
-				t.Errorf("Call() = %v, %q, %s; want %v, %q, %s", e.Kind, e.Message, e.Details, tt.kind, tt.message, tt.details)
+			if se.Kind != tt.kind || se.Message != tt.message || !sameDetails(se.Details, tt.details) {
+				t.Errorf("Call() = %v, %q, %s; want %v, %q, %s", se.Kind, se.Message, se.Details, tt.kind, tt.message, tt.details)
+			}
+			if want := "jsonrpc: links.get: " + se.Error(); err.Error() != want {
+				t.Errorf("Call() = %q, want %q", err, want)
+			}
+			if _, ok := errors.AsType[*tyr.Error](err); ok {
+				t.Errorf("Call() = %v, a *tyr.Error", err)
 			}
 		})
 	}
@@ -202,12 +211,11 @@ func TestClientErrors(t *testing.T) {
 
 // sameDetails reports whether d, the details of an error that a client
 // got, are want as JSON, or nil if want is "".
-func sameDetails(d any, want string) bool {
+func sameDetails(d jsontext.Value, want string) bool {
 	if want == "" {
 		return d == nil
 	}
-	v, ok := d.(jsontext.Value)
-	return ok && string(v) == want
+	return string(d) == want
 }
 
 func TestClientViolations(t *testing.T) {
@@ -216,12 +224,12 @@ func TestClientViolations(t *testing.T) {
 
 	// As the documentation of Call has it.
 	var v tyr.Violations
-	e, ok := errors.AsType[*tyr.Error](err)
-	if !ok || e.Kind != tyr.KindInvalidArgument {
+	se, ok := errors.AsType[*jsonrpc.ServerError](err)
+	if !ok || se.Kind != tyr.KindInvalidArgument {
 		t.Fatalf("Call() = %v, want invalid_argument", err)
 	}
-	if d, ok := e.Details.(jsontext.Value); !ok || json.Unmarshal(d, &v) != nil {
-		t.Fatalf("details = %#v, want violations as a jsontext.Value", e.Details)
+	if err := json.Unmarshal(se.Details, &v); err != nil {
+		t.Fatalf("details = %s, want violations: %v", se.Details, err)
 	}
 	if want := (tyr.Violations{{Pointer: "/code", Detail: "is required"}}); !slices.Equal(v, want) {
 		t.Errorf("violations = %+v, want %+v", v, want)
@@ -265,12 +273,18 @@ func TestClientErrorCodes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := replyClient(t, http.StatusOK, "application/json", `{"jsonrpc":"2.0","error":`+tt.error+`,"id":1}`)
 			_, err := c.Call(t.Context(), echoOp, thing{})
-			e, ok := err.(*tyr.Error)
+			se, ok := errors.AsType[*jsonrpc.ServerError](err)
 			if !ok {
-				t.Fatalf("Call() = %v (%T), want a *tyr.Error", err, err)
+				t.Fatalf("Call() = %v (%T), want a *jsonrpc.ServerError", err, err)
 			}
-			if e.Kind != tt.kind || e.Message != "m" || !sameDetails(e.Details, tt.details) {
-				t.Errorf("Call() = %v, %q, %s; want %v, %q, %s", e.Kind, e.Message, e.Details, tt.kind, "m", tt.details)
+			var sent struct {
+				Code int `json:"code"`
+			}
+			if err := json.Unmarshal([]byte(tt.error), &sent); err != nil {
+				t.Fatal(err)
+			}
+			if se.Kind != tt.kind || se.Code != sent.Code || se.Message != "m" || !sameDetails(se.Details, tt.details) {
+				t.Errorf("Call() = %v, %d, %q, %s; want %v, %d, %q, %s", se.Kind, se.Code, se.Message, se.Details, tt.kind, sent.Code, "m", tt.details)
 			}
 		})
 	}
@@ -280,8 +294,9 @@ func TestClientNullID(t *testing.T) {
 	// The server can't tell the id of a request it can't parse.
 	c := replyClient(t, http.StatusOK, "application/json", `{"jsonrpc":"2.0","error":{"code":-32700,"message":"Parse error"},"id":null}`)
 	_, err := c.Call(t.Context(), echoOp, thing{})
-	if e, ok := err.(*tyr.Error); !ok || e.Kind != tyr.KindInternal || e.Message != "Parse error" {
-		t.Errorf("Call() = %v, want internal: Parse error", err)
+	const want = "jsonrpc: things.echo: internal (-32700): Parse error"
+	if se, ok := errors.AsType[*jsonrpc.ServerError](err); !ok || se.Kind != tyr.KindInternal || err.Error() != want {
+		t.Errorf("Call() = %v, want %s", err, want)
 	}
 }
 
@@ -325,8 +340,8 @@ func TestClientInvalidResponses(t *testing.T) {
 			if err == nil || !tt.prefix && err.Error() != want || tt.prefix && !strings.HasPrefix(err.Error(), want) {
 				t.Errorf("Call() = %v, want %q", err, want)
 			}
-			if _, ok := errors.AsType[*tyr.Error](err); ok {
-				t.Errorf("Call() = %v, a *tyr.Error", err)
+			if _, ok := errors.AsType[*jsonrpc.ServerError](err); ok {
+				t.Errorf("Call() = %v, a *jsonrpc.ServerError", err)
 			}
 		})
 	}
@@ -551,9 +566,75 @@ func TestClientZeroContract(t *testing.T) {
 	}
 }
 
+func TestServerErrorAsIs(t *testing.T) {
+	// Another service, which rejects the credentials of the caller, tells
+	// of its roles and checks its own requests.
+	lookup := tyr.Define[thing, thing]("links.lookup")
+	other := newAPI()
+	other.Implement(lookup, func(ctx context.Context, req thing) (thing, error) {
+		switch req.Code {
+		case "auth":
+			return thing{}, tyr.Unauthenticated("service token expired")
+		case "perm":
+			return thing{}, tyr.PermissionDenied("links.lookup requires the role billing")
+		}
+		var v tyr.Violations
+		v.Add("count", "must be at least 1")
+		return thing{}, v.Err()
+	})
+	links := newClient(t, jsonrpc.Handler(other))
+
+	// A service whose handler returns the errors of the other as they are.
+	var logs bytes.Buffer
+	api := tyr.New(tyr.WithLogger(slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.TimeKey {
+				return slog.Attr{}
+			}
+			return a
+		},
+	}))))
+	api.Handle("pages.show", func(ctx context.Context, req struct {
+		ID string `json:"id" path:"id"`
+	}) (thing, error) {
+		return links.Call(ctx, lookup, thing{Code: req.ID})
+	}, rest.Route("GET /pages/{id}"))
+	mux := http.NewServeMux()
+	rest.Mount(mux, api, rest.Challenge(`Bearer realm="pages"`))
+
+	// Its clients get an internal error, whatever the other answered: not
+	// a 401 with its own challenge, which would make them log in again, nor
+	// the roles or the violations of the other.
+	for _, id := range []string{"auth", "perm", "invalid"} {
+		logs.Reset()
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest("GET", "/pages/"+id, nil))
+		const internal = `{"type":"/problems/internal","title":"Internal Error","status":500,"detail":"internal error","kind":"internal"}`
+		if rec.Code != http.StatusInternalServerError || rec.Header().Get("WWW-Authenticate") != "" || rec.Body.String() != internal {
+			t.Errorf("GET /pages/%s = %d %v %s, want 500 %s", id, rec.Code, rec.Header(), rec.Body, internal)
+		}
+		// The log tells what the other service answered, and who.
+		if !strings.Contains(logs.String(), `"msg":"tyr: operation failed","err":"internal: internal error: jsonrpc: links.lookup: `) {
+			t.Errorf("GET /pages/%s logged %s, want the answer of links.lookup", id, logs.String())
+		}
+	}
+	const want = `{"level":"ERROR","msg":"tyr: operation failed","err":"internal: internal error: jsonrpc: links.lookup: unauthenticated (401): service token expired"}` + "\n"
+	logs.Reset()
+	mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/pages/auth", nil))
+	if logs.String() != want {
+		t.Errorf("logged %s, want %s", logs.String(), want)
+	}
+}
+
 // recipe is the mapper that the documentation of Client gives, as it is
 // there.
 func recipe(err error) error {
+	if se, ok := errors.AsType[*jsonrpc.ServerError](err); ok {
+		if se.Kind == tyr.KindUnavailable || se.Kind == tyr.KindDeadlineExceeded {
+			return tyr.Unavailable("links are unavailable").WithCause(err)
+		}
+		return nil // whatever else it answered is internal to us
+	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return nil // the rules of Call are right for these
 	}
@@ -600,10 +681,22 @@ func TestMapErrorRecipe(t *testing.T) {
 		}), tyr.KindUnavailable},
 		{"404", replying(http.StatusNotFound, ""), tyr.KindInternal},
 		{"invalid response", replying(http.StatusOK, `{"jsonrpc":"2.0"}`), tyr.KindInternal},
+		// What the service answered is internal but its failures, which
+		// its clients may retry.
 		{
-			"answered",
+			"answered not_found",
 			replying(http.StatusOK, `{"jsonrpc":"2.0","error":{"code":404,"message":"link not found","data":{"kind":"not_found"}},"id":1}`),
-			tyr.KindNotFound,
+			tyr.KindInternal,
+		},
+		{
+			"answered unavailable",
+			replying(http.StatusOK, `{"jsonrpc":"2.0","error":{"code":503,"message":"try later","data":{"kind":"unavailable"}},"id":1}`),
+			tyr.KindUnavailable,
+		},
+		{
+			"answered deadline_exceeded",
+			replying(http.StatusOK, `{"jsonrpc":"2.0","error":{"code":504,"message":"took too long","data":{"kind":"deadline_exceeded"}},"id":1}`),
+			tyr.KindUnavailable,
 		},
 		// Not an exchange of a call: url.Parse names its Op "parse".
 		{"url.Parse", nil, tyr.KindInternal},

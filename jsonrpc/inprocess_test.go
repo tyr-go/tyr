@@ -253,7 +253,7 @@ func TestInProcessCall(t *testing.T) {
 		t.Errorf("Call(things.echo) = %+v, %v; want %+v, <nil>", got, err, want)
 	}
 	_, err = c.Call(ctx, tyr.Define[struct{}, struct{}]("things.check"), struct{}{})
-	if e, ok := err.(*tyr.Error); !ok || e.Kind != tyr.KindInvalidArgument {
+	if se, ok := errors.AsType[*jsonrpc.ServerError](err); !ok || se.Kind != tyr.KindInvalidArgument {
 		t.Errorf("Call(things.check) = %v, want invalid_argument", err)
 	}
 
@@ -292,7 +292,7 @@ func TestInProcessAuthentication(t *testing.T) {
 
 	hc := jsonrpc.InProcess(server)
 	_, err := jsonrpc.NewClient("http://links/rpc", hc).Call(t.Context(), echoOp, thing{})
-	if e, ok := err.(*tyr.Error); !ok || e.Kind != tyr.KindUnauthenticated {
+	if se, ok := errors.AsType[*jsonrpc.ServerError](err); !ok || se.Kind != tyr.KindUnauthenticated {
 		t.Errorf("Call() without a token = %v, want unauthenticated", err)
 	}
 

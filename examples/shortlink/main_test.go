@@ -7,7 +7,6 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"flag"
-	"fmt"
 	"io"
 	"log/slog"
 	"maps"
@@ -345,12 +344,12 @@ func TestRPC(t *testing.T) {
 		}
 		// The errors of the store, translated by MapError, and of validation.
 		_, err = c.Call(ctx, contract.GetLink, contract.GetReq{Code: "nope"})
-		if e, ok := errors.AsType[*tyr.Error](err); !ok || e.Kind != tyr.KindNotFound || e.Message != "link not found" {
+		if se, ok := errors.AsType[*jsonrpc.ServerError](err); !ok || se.Kind != tyr.KindNotFound || se.Message != "link not found" {
 			t.Errorf("get a missing link = %v, want not_found: link not found", err)
 		}
 		_, err = c.Call(ctx, contract.CreateLink, contract.CreateReq{URL: "go.dev"})
 		const violations = `[{"pointer":"/url","detail":"must be an http or https URL"}]`
-		if e, ok := errors.AsType[*tyr.Error](err); !ok || e.Kind != tyr.KindInvalidArgument || fmt.Sprint(e.Details) != violations {
+		if se, ok := errors.AsType[*jsonrpc.ServerError](err); !ok || se.Kind != tyr.KindInvalidArgument || string(se.Details) != violations {
 			t.Errorf("create with an invalid URL = %v, want invalid_argument with %s", err, violations)
 		}
 
@@ -375,7 +374,7 @@ func TestRPCLogs(t *testing.T) {
 		// service takes it, as a service that calls it would have it.
 		const id = "0192f5e2-7c3a-7b1e-9c4d-2f1a3b5c7d9e"
 		_, err := rpc(s.client, "").Call(tyr.WithRequestID(t.Context(), id), contract.GetLink, contract.GetReq{Code: "nope"})
-		if e, ok := errors.AsType[*tyr.Error](err); !ok || e.Kind != tyr.KindNotFound {
+		if se, ok := errors.AsType[*jsonrpc.ServerError](err); !ok || se.Kind != tyr.KindNotFound {
 			t.Errorf("get a missing link = %v, want not_found", err)
 		}
 		synctest.Wait()
@@ -419,7 +418,7 @@ func TestPurge(t *testing.T) {
 		}
 		for _, tt := range tests {
 			_, err := rpc(s.client, tt.token).Call(t.Context(), contract.PurgeLinks, purge)
-			if e, ok := errors.AsType[*tyr.Error](err); !ok || e.Kind != tt.kind || e.Message != tt.message {
+			if se, ok := errors.AsType[*jsonrpc.ServerError](err); !ok || se.Kind != tt.kind || se.Message != tt.message {
 				t.Errorf("purge %s = %v, want %v: %s", tt.name, err, tt.kind, tt.message)
 			}
 		}
@@ -443,7 +442,7 @@ func TestInProcess(t *testing.T) {
 		hc := jsonrpc.InProcess(s.handler)
 		purge := contract.PurgeReq{Host: "evil.example"}
 		_, err := rpc(hc, "").Call(t.Context(), contract.PurgeLinks, purge)
-		if e, ok := errors.AsType[*tyr.Error](err); !ok || e.Kind != tyr.KindUnauthenticated {
+		if se, ok := errors.AsType[*jsonrpc.ServerError](err); !ok || se.Kind != tyr.KindUnauthenticated {
 			t.Errorf("purge without a token = %v, want unauthenticated", err)
 		}
 		if res, err := rpc(hc, adminToken).Call(t.Context(), contract.PurgeLinks, purge); res.Purged != 0 || err != nil {

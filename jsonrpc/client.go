@@ -24,15 +24,16 @@ import (
 // server shares:
 //
 //	c := jsonrpc.NewClient("http://links.internal/rpc", &http.Client{Timeout: 5 * time.Second})
-//	link, err := c.Call(ctx, contract.GetLink, contract.GetLinkReq{Code: "go"})
-//	if e, ok := errors.AsType[*tyr.Error](err); ok && e.Kind == tyr.KindNotFound {
+//	link, err := c.Call(ctx, contract.GetLink, contract.GetReq{Code: "go"})
+//	if se, ok := errors.AsType[*jsonrpc.ServerError](err); ok && se.Kind == tyr.KindNotFound {
 //		// ...
 //	}
 //
-// A *tyr.Error from [Client.Call] is what the server answered; any other
-// error means that no answer came that fits the call. Headers of one's
-// own, such as Authorization, go through the Transport of the http.Client,
-// as with golang.org/x/oauth2. A Client is safe for concurrent use.
+// A [*ServerError] from [Client.Call] is what the server answered; any
+// other error means that no answer came that fits the call. Headers of
+// one's own, such as Authorization, go through the Transport of the
+// http.Client, as with golang.org/x/oauth2. A Client is safe for concurrent
+// use.
 //
 // A generic method can't be in an interface, so code that calls a service
 // declares the small interface it needs, over a Client, and its tests run
@@ -45,16 +46,36 @@ import (
 //
 // # Errors of another service
 //
-// A handler that calls another service may return the error of Call as it
-// is. An error that the service answered then goes to the handler's own
-// clients with its kind and message, as a gRPC status does, and other
-// errors follow the rules of [tyr.Operation.Call]: the error of a context
-// that is done becomes deadline_exceeded or canceled, and the rest, which
-// the API logs, internal. So does a 503 from the load balancer of the
-// service while it is being deployed. To report such failures as
-// unavailable, map them:
+// Translate the errors of another service where you call it. A handler that
+// returns the error of Call as it is fails with internal, which the API
+// logs with the name of the operation and what the service answered, and
+// its own clients learn nothing of the other service: neither its
+// unauthenticated, which is about the credentials of the handler rather
+// than theirs, nor its violations, which point into a request they didn't
+// send. A kind that means something to them goes to them in the words of
+// the handler:
+//
+//	link, err := links.Call(ctx, contract.GetLink, contract.GetReq{Code: code})
+//	if se, ok := errors.AsType[*jsonrpc.ServerError](err); ok && se.Kind == tyr.KindNotFound {
+//		return nil, tyr.NotFound("no link %q", code).WithCause(err)
+//	}
+//	if err != nil {
+//		return nil, err
+//	}
+//
+// The other errors follow the rules of [tyr.Operation.Call]: the error of a
+// context that is done becomes deadline_exceeded or canceled, and the rest
+// internal, a failed connection and the 503 of the load balancer of the
+// service while it is being deployed included. To report the failures of
+// the service as unavailable, map them:
 //
 //	api.MapError(func(err error) error {
+//		if se, ok := errors.AsType[*jsonrpc.ServerError](err); ok {
+//			if se.Kind == tyr.KindUnavailable || se.Kind == tyr.KindDeadlineExceeded {
+//				return tyr.Unavailable("links are unavailable").WithCause(err)
+//			}
+//			return nil // whatever else it answered is internal to us
+//		}
 //		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 //			return nil // the rules of Call are right for these
 //		}
@@ -100,21 +121,19 @@ func NewClient(endpoint string, hc *http.Client) *Client {
 // header, if it is 1 to 128 characters of [A-Za-z0-9._:-], as the
 // middleware.RequestID of the next service requires.
 //
-// An error that the server answered is a *tyr.Error. Its Kind is the kind
-// in the data of the error, or else the kind whose errors get its code, as
-// the package documentation lists them, with 409 as failed_precondition;
-// other codes are [tyr.KindInternal]. Its Message is the message of the
-// error, and its Details are the details in the data as a
-// [jsontext.Value], or nil. Violations can be decoded from them:
+// An error that the server answered is a [*ServerError]. Its Kind is the
+// kind in the data of the error, or else the kind whose errors get its
+// code, as the package documentation lists them, with 409 as
+// failed_precondition; other codes are [tyr.KindInternal]. Its Details are
+// the details in the data, or nil. Violations can be decoded from them:
 //
 //	var v tyr.Violations
-//	if d, ok := e.Details.(jsontext.Value); ok && e.Kind == tyr.KindInvalidArgument {
-//		err := json.Unmarshal(d, &v)
+//	if se, ok := errors.AsType[*jsonrpc.ServerError](err); ok && se.Kind == tyr.KindInvalidArgument {
+//		err := json.Unmarshal(se.Details, &v)
 //		// ...
 //	}
 //
-// Any other error means that no answer came that fits the call, and it
-// isn't a *tyr.Error:
+// Any other error means that no answer came that fits the call:
 //
 //   - a failed HTTP exchange, reading the response included, is a
 //     [*url.Error] with the Op "Post", as [http.Client.Do] returns it;
@@ -124,8 +143,10 @@ func NewClient(endpoint string, hc *http.Client) *Client {
 //     response to the call and a result that doesn't decode into a Res
 //     are errors of their own
 //
-// Call wraps these errors with the name of the operation; [errors.AsType]
-// finds them in it. It also fails for the zero Contract, which has no name.
+// None of them is a [*tyr.Error]: see the documentation of [Client] for
+// what a handler that returns them does. Call wraps them with the name of
+// the operation; [errors.AsType] finds them in it. It also fails for the
+// zero Contract, which has no name.
 func (c *Client) Call[Req, Res any](ctx context.Context, contract tyr.Contract[Req, Res], req Req) (Res, error) {
 	var res Res
 	name := contract.Name()
@@ -163,12 +184,12 @@ func (c *Client) Call[Req, Res any](ctx context.Context, contract tyr.Contract[R
 		return res, fmt.Errorf("jsonrpc: %s: %w", name, exchangeError(ctx, hreq, err))
 	}
 
-	result, e, err := parseReply(data, id)
+	result, se, err := parseReply(data, id)
 	switch {
 	case err != nil:
 		return res, fmt.Errorf("jsonrpc: %s: invalid response: %w", name, err)
-	case e != nil:
-		return res, e
+	case se != nil:
+		return res, fmt.Errorf("jsonrpc: %s: %w", name, se)
 	}
 	if err := json.Unmarshal(result, &res); err != nil {
 		return res, fmt.Errorf("jsonrpc: %s: decoding the result: %w", name, err)
@@ -210,7 +231,7 @@ func redacted(u *url.URL) string {
 
 // parseReply parses data as the response object to the call with the
 // given id, and returns its result or its error.
-func parseReply(data []byte, id uint64) (jsontext.Value, *tyr.Error, error) {
+func parseReply(data []byte, id uint64) (jsontext.Value, *ServerError, error) {
 	var r struct {
 		JSONRPC string         `json:"jsonrpc"`
 		Result  jsontext.Value `json:"result"`
@@ -244,10 +265,31 @@ func parseReply(data []byte, id uint64) (jsontext.Value, *tyr.Error, error) {
 	return r.Result, nil, nil
 }
 
+// ServerError is the error that the server answered a call with; see
+// [Client.Call]. Call returns it wrapped with the name of the operation,
+// and [errors.AsType] finds it.
+//
+// It isn't a [*tyr.Error]: a handler that returns it as is fails with
+// internal, which the API logs with it, so a kind of another service reaches
+// the clients of the handler only when the handler translates it, as the
+// documentation of [Client] shows.
+type ServerError struct {
+	Kind    tyr.Kind       // data.kind, or else the kind of Code; KindInternal for other codes
+	Code    int            // the code of the error, such as 404 or -32602
+	Message string         // as the server sent it
+	Details jsontext.Value // data.details, or nil
+}
+
+// Error returns the kind, the code and the message of e, such as
+// not_found (404): link "go" not found.
+func (e *ServerError) Error() string {
+	return fmt.Sprintf("%v (%d): %s", e.Kind, e.Code, e.Message)
+}
+
 // errorOfReply returns the error that a server answered, with the given
 // code, message and data, as described at Client.Call.
-func errorOfReply(code int, message string, data jsontext.Value) *tyr.Error {
-	e := &tyr.Error{Kind: kindOfCode(code), Message: message}
+func errorOfReply(code int, message string, data jsontext.Value) *ServerError {
+	e := &ServerError{Kind: kindOfCode(code), Code: code, Message: message}
 	var d struct {
 		Kind    jsontext.Value `json:"kind"`
 		Details jsontext.Value `json:"details"`
