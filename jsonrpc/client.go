@@ -89,6 +89,20 @@ import (
 //		}
 //		return nil
 //	})
+//
+// # Tracing
+//
+// A call takes the trace of its context to the service if the Transport of
+// the http.Client propagates it, as the one of
+// go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp does, which
+// makes a span of the client for the call too:
+//
+//	hc := &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport), Timeout: 5 * time.Second}
+//	links := jsonrpc.NewClient("http://links.internal/rpc", hc)
+//
+// The traceparent header carries the trace to the service, where the spans
+// of the call, such as those of github.com/tyr-go/tyr/oteltyr, join it.
+// NewClient keeps the Transport of the client it copies.
 type Client struct {
 	endpoint string
 	hc       *http.Client  // a copy of that of NewClient, which doesn't follow redirects

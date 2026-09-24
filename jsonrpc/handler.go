@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 
 	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/ctxkey"
 	"github.com/tyr-go/tyr/internal/jsonreq"
 )
 
@@ -74,7 +75,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.record(r, c.op)
 		var o outcome
 		if c.op != nil {
-			o = h.call(r.Context(), c)
+			o = h.call(r.Context(), &c)
 		}
 		if res := h.respond(c, o); res != nil {
 			h.write(r.Context(), w, res)
@@ -189,10 +190,35 @@ func isEmptyArray(v jsontext.Value) bool {
 	return json.Unmarshal(v, &elems) == nil && len(elems) == 0
 }
 
+// CallInfo is what [Handler] knows of a call of JSON-RPC that an operation
+// serves, for the interceptors that describe calls, such as those of
+// tracing; see [CallFrom].
+type CallInfo struct {
+	// ID is the id of the request object as the request has it, such as 1
+	// or "a", and nil for a notification.
+	ID jsontext.Value
+}
+
+// callKey is the key of the call of a context. A pointer, to a call that a
+// batch holds anyway, costs no allocation beside the context.
+var callKey = ctxkey.New[*call]("jsonrpc.call")
+
+// CallFrom returns the call of JSON-RPC that ctx, the context of an
+// operation that [Handler] serves, is for, and reports whether it is for
+// one. A context made of it carries the call too, such as that of an
+// operation that the handler of the call calls itself.
+func CallFrom(ctx context.Context) (CallInfo, bool) {
+	c, ok := callKey.Get(ctx)
+	if !ok || c == nil {
+		return CallInfo{}, false
+	}
+	return CallInfo{ID: c.id}, true
+}
+
 // call calls the operation of c with its params.
-func (h *handler) call(ctx context.Context, c call) outcome {
+func (h *handler) call(ctx context.Context, c *call) outcome {
 	// The operation stays in the context after the call, for the logs.
-	ctx = tyr.WithOperation(ctx, c.op)
+	ctx = callKey.Set(tyr.WithOperation(ctx, c.op), c)
 	res, err := c.op.Call(ctx, func(dst any) error {
 		if c.params == nil {
 			return nil
@@ -240,7 +266,7 @@ func (h *handler) callAll(ctx context.Context, calls []call) []outcome {
 			case ctx.Err() != nil:
 				outcomes[i] = notStarted(ctx)
 			default:
-				outcomes[i] = h.call(ctx, calls[i])
+				outcomes[i] = h.call(ctx, &calls[i])
 			}
 		}
 	}

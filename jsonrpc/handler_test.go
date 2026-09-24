@@ -704,3 +704,58 @@ type discard struct {
 func (d *discard) Header() http.Header         { return d.header }
 func (d *discard) Write(b []byte) (int, error) { return len(b), nil }
 func (d *discard) WriteHeader(int)             {}
+
+func TestCallFrom(t *testing.T) {
+	var mu sync.Mutex
+	var got []string
+	api := newAPI()
+	op := api.Handle("things.call", func(ctx context.Context, req thing) (struct{}, error) {
+		info, ok := jsonrpc.CallFrom(ctx)
+		mu.Lock()
+		defer mu.Unlock()
+		got = append(got, fmt.Sprintf("%v %s", ok, []byte(info.ID)))
+		return struct{}{}, nil
+	})
+	h := jsonrpc.Handler(api)
+	for _, id := range []string{"1", `"a"`, "", "null"} {
+		post(h, callOf("things.call", "", id))
+	}
+	post(h, "["+callOf("things.call", "", "2")+","+callOf("things.call", "", `"b"`)+"]")
+	// Outside of JSON-RPC, there is no call.
+	if _, err := op.Call(t.Context(), nil); err != nil {
+		t.Fatal(err)
+	}
+	// A notification has no id; the calls of a batch run in any order.
+	want := []string{"true 1", `true "a"`, "true ", "true null", `true "b"`, "true 2", "false "}
+	slices.Sort(got[4:6])
+	if !slices.Equal(got, want) {
+		t.Errorf("the calls = %q, want %q", got, want)
+	}
+}
+
+func TestErrorCode(t *testing.T) {
+	// ErrorCode is the code that the handler sends for the kind.
+	kinds := []tyr.Kind{
+		tyr.KindInternal, tyr.KindInvalidArgument, tyr.KindUnauthenticated, tyr.KindPermissionDenied,
+		tyr.KindNotFound, tyr.KindAlreadyExists, tyr.KindFailedPrecondition, tyr.KindResourceExhausted,
+		tyr.KindDeadlineExceeded, tyr.KindUnavailable, tyr.KindCanceled, tyr.Kind(42),
+	}
+	for _, k := range kinds {
+		api := newAPI()
+		api.Handle("things.fail", func(ctx context.Context, req thing) (struct{}, error) {
+			return struct{}{}, &tyr.Error{Kind: k, Message: "failed"}
+		})
+		var res struct {
+			Error struct {
+				Code int `json:"code"`
+			} `json:"error"`
+		}
+		rec := post(jsonrpc.Handler(api), callOf("things.fail", "", "1"))
+		if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+			t.Fatal(err)
+		}
+		if got := jsonrpc.ErrorCode(k); got != res.Error.Code {
+			t.Errorf("ErrorCode(%v) = %d, the handler sends %d", k, got, res.Error.Code)
+		}
+	}
+}

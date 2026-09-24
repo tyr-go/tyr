@@ -123,6 +123,14 @@ func (h *handler) errorOf(ctx context.Context, err error) *errorObject {
 	return &errorObject{Code: codeOf(e.Kind), Message: e.Message, Data: d}
 }
 
+// ErrorCode returns the code of the error object that [Handler] sends for
+// an error of the kind k, as the package documentation lists them: -32602
+// for invalid_argument, the HTTP status that rest sends for most others, and
+// -32603 for internal and a kind that jsonrpc doesn't know.
+func ErrorCode(k tyr.Kind) int {
+	return codeOf(k)
+}
+
 // codeOf returns the error code of errors of kind k: the HTTP status of
 // rest outside the range of codes that JSON-RPC reserves.
 func codeOf(k tyr.Kind) int {
