@@ -10,7 +10,7 @@ import (
 // Kind classifies an [Error] independently of any transport. The kinds
 // follow the meaning of the gRPC status codes of the same names, and
 // transports map them to codes of their own, such as HTTP statuses or
-// JSON-RPC error codes. The HTTP statuses of [github.com/iaxel/tyr/rest]
+// JSON-RPC error codes. The HTTP statuses of [github.com/tyr-go/tyr/rest]
 // are its own choice rather than the HTTP mapping of gRPC: there,
 // [KindFailedPrecondition] is 409 Conflict, not 400, on purpose, as RFC 9110
 // has 409 for a request that conflicts with the state of its resource.

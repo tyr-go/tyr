@@ -10,8 +10,8 @@ import (
 
 	"github.com/go-playground/validator/v10"
 
-	"github.com/iaxel/tyr/internal/plan"
-	"github.com/iaxel/tyr/internal/plan/plantest"
+	"github.com/tyr-go/tyr/internal/plan"
+	"github.com/tyr-go/tyr/internal/plan/plantest"
 )
 
 // violation is a field that failed validation and the rule it failed.

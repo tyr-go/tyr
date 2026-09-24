@@ -12,8 +12,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/iaxel/tyr"
-	"github.com/iaxel/tyr/ctxkey"
+	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/ctxkey"
 )
 
 // Caller is an authenticated caller.

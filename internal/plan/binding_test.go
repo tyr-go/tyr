@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/iaxel/tyr/internal/plan"
+	"github.com/tyr-go/tyr/internal/plan"
 )
 
 // code is a type that parses itself.

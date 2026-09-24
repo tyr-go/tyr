@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/iaxel/tyr"
+	"github.com/tyr-go/tyr"
 )
 
 func TestKindOfCode(t *testing.T) {

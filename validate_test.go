@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/iaxel/tyr"
+	"github.com/tyr-go/tyr"
 )
 
 // checked is a request whose Validate records that it ran and returns Err,

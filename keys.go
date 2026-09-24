@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/iaxel/tyr/ctxkey"
+	"github.com/tyr-go/tyr/ctxkey"
 )
 
 // requestIDKey carries the ID of the request a context belongs to; see
@@ -27,7 +27,7 @@ func RequestIDFrom(ctx context.Context) (string, bool) {
 // WithRequestID returns a derived context that carries id as the ID of its
 // request, as [RequestIDFrom] reads it and [NewLogHandler] adds it to log
 // records. Middleware of a transport sets it, such as
-// [github.com/iaxel/tyr/middleware.RequestID].
+// [github.com/tyr-go/tyr/middleware.RequestID].
 func WithRequestID(ctx context.Context, id string) context.Context {
 	return requestIDKey.Set(ctx, id)
 }

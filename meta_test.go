@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/iaxel/tyr"
+	"github.com/tyr-go/tyr"
 )
 
 func TestMetaKeyGet(t *testing.T) {

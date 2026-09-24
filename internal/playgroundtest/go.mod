@@ -1,12 +1,12 @@
 // A module of its own, so that the root module has no dependencies: it only
 // holds tests and is never published.
-module github.com/iaxel/tyr/internal/playgroundtest
+module github.com/tyr-go/tyr/internal/playgroundtest
 
 go 1.27
 
 require (
 	github.com/go-playground/validator/v10 v10.30.5
-	github.com/iaxel/tyr v0.0.0-00010101000000-000000000000
+	github.com/tyr-go/tyr v0.0.0-00010101000000-000000000000
 )
 
 require (
@@ -19,4 +19,4 @@ require (
 	golang.org/x/text v0.42.0 // indirect
 )
 
-replace github.com/iaxel/tyr => ../..
+replace github.com/tyr-go/tyr => ../..

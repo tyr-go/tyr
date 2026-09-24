@@ -8,7 +8,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/iaxel/tyr"
+	"github.com/tyr-go/tyr"
 )
 
 type getLinkReq struct {

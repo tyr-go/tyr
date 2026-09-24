@@ -8,9 +8,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/iaxel/tyr"
-	"github.com/iaxel/tyr/ctxkey"
-	"github.com/iaxel/tyr/rest"
+	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/ctxkey"
+	"github.com/tyr-go/tyr/rest"
 )
 
 // In an application, roles, requireRoles and authorize would live in an

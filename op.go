@@ -9,7 +9,7 @@ import (
 // Op is the contract of an operation: its name, the types of its request
 // and its result, and its options, such as a route for a transport. It is a
 // plain value that the server and its clients share, such as the client of
-// [github.com/iaxel/tyr/jsonrpc], and the compiler checks both sides
+// [github.com/tyr-go/tyr/jsonrpc], and the compiler checks both sides
 // against it:
 //
 //	// package contract, which the server and its clients import

@@ -5,8 +5,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/iaxel/tyr"
-	"github.com/iaxel/tyr/examples/shortlink/contract"
+	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/examples/shortlink/contract"
 )
 
 func TestCreateReqValidate(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/iaxel/tyr"
+	"github.com/tyr-go/tyr"
 )
 
 // Logger returns a middleware that writes a record to l at Info for every

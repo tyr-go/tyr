@@ -13,9 +13,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/iaxel/tyr"
-	"github.com/iaxel/tyr/internal/jsonreq"
-	"github.com/iaxel/tyr/internal/plan"
+	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/internal/jsonreq"
+	"github.com/tyr-go/tyr/internal/plan"
 )
 
 // handler serves one operation.

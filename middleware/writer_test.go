@@ -12,7 +12,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/iaxel/tyr/middleware"
+	"github.com/tyr-go/tyr/middleware"
 )
 
 // wrapped returns h behind Logger and Recover, which both wrap the writer.

@@ -18,8 +18,8 @@ import (
 	"testing/iotest"
 	"time"
 
-	"github.com/iaxel/tyr"
-	"github.com/iaxel/tyr/rest"
+	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/rest"
 )
 
 var update = flag.Bool("update", false, "update the golden files in testdata")

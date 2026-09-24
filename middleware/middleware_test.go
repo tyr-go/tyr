@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/iaxel/tyr/middleware"
+	"github.com/tyr-go/tyr/middleware"
 )
 
 func TestChain(t *testing.T) {

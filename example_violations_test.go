@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/iaxel/tyr"
-	"github.com/iaxel/tyr/rest"
+	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/rest"
 )
 
 type CreateLinkReq struct {

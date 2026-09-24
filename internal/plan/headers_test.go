@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/iaxel/tyr/internal/plan"
+	"github.com/tyr-go/tyr/internal/plan"
 )
 
 // text formats itself for a header, with a pointer receiver.

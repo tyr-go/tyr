@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/iaxel/tyr/examples/shortlink/authz"
+	"github.com/tyr-go/tyr/examples/shortlink/authz"
 )
 
 func TestAuthenticate(t *testing.T) {

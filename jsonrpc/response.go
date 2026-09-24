@@ -6,7 +6,7 @@ import (
 	"encoding/json/v2"
 	"net/http"
 
-	"github.com/iaxel/tyr"
+	"github.com/tyr-go/tyr"
 )
 
 // The error codes that the JSON-RPC 2.0 specification defines.

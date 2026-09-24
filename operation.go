@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"runtime/debug"
 
-	"github.com/iaxel/tyr/internal/plan"
+	"github.com/tyr-go/tyr/internal/plan"
 )
 
 // OpOption configures an operation when it is registered, e.g. with the

@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/iaxel/tyr"
-	"github.com/iaxel/tyr/jsonrpc"
+	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/jsonrpc"
 )
 
 var update = flag.Bool("update", false, "update the golden files in testdata")

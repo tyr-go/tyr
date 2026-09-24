@@ -10,7 +10,7 @@ import (
 	"testing"
 	"testing/slogtest"
 
-	"github.com/iaxel/tyr"
+	"github.com/tyr-go/tyr"
 )
 
 // noTime drops the time from records, so that the output is stable.

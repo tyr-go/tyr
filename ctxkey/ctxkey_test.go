@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/iaxel/tyr/ctxkey"
+	"github.com/tyr-go/tyr/ctxkey"
 )
 
 func TestKeyGet(t *testing.T) {

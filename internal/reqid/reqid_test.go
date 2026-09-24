@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/iaxel/tyr/internal/reqid"
+	"github.com/tyr-go/tyr/internal/reqid"
 )
 
 func TestValid(t *testing.T) {

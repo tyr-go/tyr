@@ -9,7 +9,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/iaxel/tyr"
+	"github.com/tyr-go/tyr"
 )
 
 func TestKindString(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/iaxel/tyr/internal/plan"
+	"github.com/tyr-go/tyr/internal/plan"
 )
 
 // Validator is implemented by requests that check themselves, for rules

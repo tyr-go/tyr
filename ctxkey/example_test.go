@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/iaxel/tyr/ctxkey"
+	"github.com/tyr-go/tyr/ctxkey"
 )
 
 // Keys are declared once, as package-level variables.

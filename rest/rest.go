@@ -101,7 +101,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/iaxel/tyr"
+	"github.com/tyr-go/tyr"
 )
 
 // The keys of the options; RouteOf reads the route.

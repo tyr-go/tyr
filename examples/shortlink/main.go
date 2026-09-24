@@ -24,14 +24,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/iaxel/tyr"
-	"github.com/iaxel/tyr/examples/shortlink/authz"
-	"github.com/iaxel/tyr/examples/shortlink/contract"
-	"github.com/iaxel/tyr/examples/shortlink/links"
-	"github.com/iaxel/tyr/examples/shortlink/store"
-	"github.com/iaxel/tyr/jsonrpc"
-	"github.com/iaxel/tyr/middleware"
-	"github.com/iaxel/tyr/rest"
+	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/examples/shortlink/authz"
+	"github.com/tyr-go/tyr/examples/shortlink/contract"
+	"github.com/tyr-go/tyr/examples/shortlink/links"
+	"github.com/tyr-go/tyr/examples/shortlink/store"
+	"github.com/tyr-go/tyr/jsonrpc"
+	"github.com/tyr-go/tyr/middleware"
+	"github.com/tyr-go/tyr/rest"
 )
 
 func main() {

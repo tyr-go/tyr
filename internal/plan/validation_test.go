@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/iaxel/tyr/internal/plan"
-	"github.com/iaxel/tyr/internal/plan/plantest"
+	"github.com/tyr-go/tyr/internal/plan"
+	"github.com/tyr-go/tyr/internal/plan/plantest"
 )
 
 func TestValidate(t *testing.T) {

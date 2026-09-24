@@ -1,9 +1,9 @@
 # ᛏ tyr
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/iaxel/tyr.svg)](https://pkg.go.dev/github.com/iaxel/tyr)
-[![CI](https://github.com/iAxel/tyr/actions/workflows/ci.yml/badge.svg)](https://github.com/iAxel/tyr/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/tag/iAxel/tyr?sort=semver&label=release)](https://github.com/iAxel/tyr/tags)
-[![Go](https://img.shields.io/github/go-mod/go-version/iAxel/tyr)](go.mod)
+[![Go Reference](https://pkg.go.dev/badge/github.com/tyr-go/tyr.svg)](https://pkg.go.dev/github.com/tyr-go/tyr)
+[![CI](https://github.com/tyr-go/tyr/actions/workflows/ci.yml/badge.svg)](https://github.com/tyr-go/tyr/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/tag/tyr-go/tyr?sort=semver&label=release)](https://github.com/tyr-go/tyr/tags)
+[![Go](https://img.shields.io/github/go-mod/go-version/tyr-go/tyr)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Typed operations for Go: write a handler once as a plain function, serve it over REST and JSON-RPC, and call it with a typed client.
@@ -12,7 +12,7 @@ Typed operations for Go: write a handler once as a plain function, serve it over
 
 ```sh
 go mod init example.com/links   # if you have no module yet
-go get github.com/iaxel/tyr
+go get github.com/tyr-go/tyr
 ```
 
 tyr needs Go 1.27, for generic methods. With `GOTOOLCHAIN=auto`, the default, the go command downloads that toolchain itself. The module depends on the standard library only.
@@ -57,16 +57,16 @@ tyr decodes the request, from the JSON body and then the fields tagged `path`, `
 
 ## Features
 
-- Handlers are plain functions, [`func(ctx, Req) (Res, error)`](https://pkg.go.dev/github.com/iaxel/tyr#Handler), with no HTTP types
-- One operation over [REST](https://pkg.go.dev/github.com/iaxel/tyr/rest) and [JSON-RPC 2.0](https://pkg.go.dev/github.com/iaxel/tyr/jsonrpc), by its name
-- [Contracts](https://pkg.go.dev/github.com/iaxel/tyr#Define) that the server and a typed [JSON-RPC client](https://pkg.go.dev/github.com/iaxel/tyr/jsonrpc#Client) share, checked by the compiler, without codegen, and an [in-process client](https://pkg.go.dev/github.com/iaxel/tyr/jsonrpc#InProcess) for tests
-- [Binding](https://pkg.go.dev/github.com/iaxel/tyr/rest#hdr-Requests) from the JSON body, the path, the query and headers
-- [Validation](https://pkg.go.dev/github.com/iaxel/tyr#hdr-Validation) by tags in the syntax of go-playground/validator and by a `Validate` method
-- [Errors of kinds](https://pkg.go.dev/github.com/iaxel/tyr#Kind): RFC 9457 problems over REST, error codes over JSON-RPC
-- [Interceptors](https://pkg.go.dev/github.com/iaxel/tyr#Interceptor) with typed [metadata](https://pkg.go.dev/github.com/iaxel/tyr#MetaKey) of operations, for authorization, metrics and tracing
-- [Middleware](https://pkg.go.dev/github.com/iaxel/tyr/middleware): request IDs, access logs, recovery from panics
-- [Logs](https://pkg.go.dev/github.com/iaxel/tyr#NewLogHandler) with the request ID and the operation, through `log/slog`
-- The [route and the operation](https://pkg.go.dev/github.com/iaxel/tyr#RequestInfo) of a request, for access logs and metrics
+- Handlers are plain functions, [`func(ctx, Req) (Res, error)`](https://pkg.go.dev/github.com/tyr-go/tyr#Handler), with no HTTP types
+- One operation over [REST](https://pkg.go.dev/github.com/tyr-go/tyr/rest) and [JSON-RPC 2.0](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc), by its name
+- [Contracts](https://pkg.go.dev/github.com/tyr-go/tyr#Define) that the server and a typed [JSON-RPC client](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Client) share, checked by the compiler, without codegen, and an [in-process client](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#InProcess) for tests
+- [Binding](https://pkg.go.dev/github.com/tyr-go/tyr/rest#hdr-Requests) from the JSON body, the path, the query and headers
+- [Validation](https://pkg.go.dev/github.com/tyr-go/tyr#hdr-Validation) by tags in the syntax of go-playground/validator and by a `Validate` method
+- [Errors of kinds](https://pkg.go.dev/github.com/tyr-go/tyr#Kind): RFC 9457 problems over REST, error codes over JSON-RPC
+- [Interceptors](https://pkg.go.dev/github.com/tyr-go/tyr#Interceptor) with typed [metadata](https://pkg.go.dev/github.com/tyr-go/tyr#MetaKey) of operations, for authorization, metrics and tracing
+- [Middleware](https://pkg.go.dev/github.com/tyr-go/tyr/middleware): request IDs, access logs, recovery from panics
+- [Logs](https://pkg.go.dev/github.com/tyr-go/tyr#NewLogHandler) with the request ID and the operation, through `log/slog`
+- The [route and the operation](https://pkg.go.dev/github.com/tyr-go/tyr#RequestInfo) of a request, for access logs and metrics
 - No dependencies but the standard library; routing by `http.ServeMux`
 
 ## Philosophy
@@ -100,7 +100,7 @@ Týr, the Norse god of law and oaths, put his hand in Fenrir's jaws as the pledg
 
 ## Examples
 
-### [Return an error](https://pkg.go.dev/github.com/iaxel/tyr/rest#example-Mount)
+### [Return an error](https://pkg.go.dev/github.com/tyr-go/tyr/rest#example-Mount)
 
 A handler returns a `*tyr.Error` of a kind, and REST sends it as RFC 9457 `application/problem+json` with the status of the kind:
 
@@ -119,7 +119,7 @@ api.Handle("links.get", func(ctx context.Context, req GetLinkReq) (string, error
 // => 404 {"type":"about:blank","title":"Not Found","status":404,"detail":"link \"rust\" not found","kind":"not_found"}
 ```
 
-### [Translate the errors of other packages](https://pkg.go.dev/github.com/iaxel/tyr#example-API.MapError)
+### [Translate the errors of other packages](https://pkg.go.dev/github.com/tyr-go/tyr#example-API.MapError)
 
 A store needn't import tyr: `MapError` translates its errors. The client learns no more of an error left untranslated than `internal error`, and the log gets its message and cause:
 
@@ -138,7 +138,7 @@ api.MapError(func(err error) error {
 // => 500 {"type":"about:blank","title":"Internal Server Error","status":500,"detail":"internal error","kind":"internal"}
 ```
 
-### [Validate a request](https://pkg.go.dev/github.com/iaxel/tyr#example-package-Validation)
+### [Validate a request](https://pkg.go.dev/github.com/tyr-go/tyr#example-package-Validation)
 
 Tags check each field; a `Validate` method, the rules that tags can't express. A failed check is a 400 with a JSON pointer per field:
 
@@ -165,7 +165,7 @@ func (r CreateLinkReq) Validate() error {
 
 Validation runs after the interceptors, so a client that isn't allowed to call an operation learns that, not what's wrong with its request.
 
-### [Authorize with an interceptor](https://pkg.go.dev/github.com/iaxel/tyr#example-Interceptor)
+### [Authorize with an interceptor](https://pkg.go.dev/github.com/tyr-go/tyr#example-Interceptor)
 
 Interceptors run around every operation, over every transport, so authorization belongs there. A `MetaKey` attaches typed metadata to operations, here the roles they require, and a group gives it to several. The role of the caller comes from HTTP middleware that reads the token and puts the role in the context, under a key of `ctxkey`. A caller without a role isn't authenticated, and one with another role isn't allowed:
 
@@ -204,7 +204,7 @@ rest.Mount(mux, api, rest.Challenge(`Bearer realm="links"`))
 // => 200 "purged"
 ```
 
-### [Set headers and redirect](https://pkg.go.dev/github.com/iaxel/tyr/rest#example-Status)
+### [Set headers and redirect](https://pkg.go.dev/github.com/tyr-go/tyr/rest#example-Status)
 
 Fields of a result tagged `header` set headers of the response, and a redirect is a status and a `Location`:
 
@@ -230,7 +230,7 @@ api.Handle("links.follow", Follow, rest.Route("GET /{code}"), rest.Status(http.S
 // => 302 Location: https://go.dev
 ```
 
-### [Serve the same operation over JSON-RPC](https://pkg.go.dev/github.com/iaxel/tyr/jsonrpc#example-Handler)
+### [Serve the same operation over JSON-RPC](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#example-Handler)
 
 The method is the name of the operation, and params are its request, by name. The code of an error is the HTTP status that REST sends for its kind, but two kinds get codes of JSON-RPC itself: -32602 for `invalid_argument`, with the violations that REST sends, and -32603 for `internal`, which tells the client no more than `internal error`. A batch runs up to 8 calls at a time, and a notification, a call without an id, gets no response:
 
@@ -244,7 +244,7 @@ mux.Handle("POST /rpc", jsonrpc.Handler(api))
 // => 200 {"jsonrpc":"2.0","error":{"code":404,"message":"link \"gone\" not found","data":{"kind":"not_found"}},"id":2}
 ```
 
-### [Call an operation with a typed client](https://pkg.go.dev/github.com/iaxel/tyr/jsonrpc#example-Client)
+### [Call an operation with a typed client](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#example-Client)
 
 A contract, made by `tyr.Define`, is a value that the server and its clients share. `Implement` doesn't compile unless the handler fits it, and `Call` takes its request type and returns its result type. An error of the server comes back as a `*tyr.Error` of its kind. Here `InProcess` serves the calls in memory, as in a test; another program passes an `http.Client` with a timeout and the URL of the service:
 
@@ -277,9 +277,9 @@ if e, ok := errors.AsType[*tyr.Error](err); ok {
 // => invalid_argument validation failed [{"pointer":"/code","detail":"is required"}]
 ```
 
-Any other error of `Call`, such as a failed connection or a 503 of a load balancer, isn't a `*tyr.Error`: the documentation of [`Client`](https://pkg.go.dev/github.com/iaxel/tyr/jsonrpc#Client) shows how to report those as `unavailable`.
+Any other error of `Call`, such as a failed connection or a 503 of a load balancer, isn't a `*tyr.Error`: the documentation of [`Client`](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Client) shows how to report those as `unavailable`.
 
-### [Log with the request ID and the operation](https://pkg.go.dev/github.com/iaxel/tyr#example-NewLogHandler)
+### [Log with the request ID and the operation](https://pkg.go.dev/github.com/tyr-go/tyr#example-NewLogHandler)
 
 There is no logger in the context: code logs with the context, and `tyr.NewLogHandler` adds the request ID and the operation of the context to every record, at its top level, even in a group:
 
@@ -295,7 +295,7 @@ logger.WithGroup("db").InfoContext(ctx, "query", "rows", 1)
 
 The records above leave out the time.
 
-### [Chain middleware](https://pkg.go.dev/github.com/iaxel/tyr/middleware#example-Chain)
+### [Chain middleware](https://pkg.go.dev/github.com/tyr-go/tyr/middleware#example-Chain)
 
 <!-- Output: middleware.ExampleChain -->
 ```go
@@ -315,7 +315,7 @@ handler := middleware.Chain(mux, // first = outermost
 
 The records above leave out the time and the duration.
 
-### [Measure requests by route and operation](https://pkg.go.dev/github.com/iaxel/tyr#example-RequestInfo)
+### [Measure requests by route and operation](https://pkg.go.dev/github.com/tyr-go/tyr#example-RequestInfo)
 
 Middleware above the transports gets the route and the operation of a request from a `tyr.RequestInfo`, which the transport fills in, even if middleware in between passes on another request. A batch has no single operation:
 
@@ -347,11 +347,11 @@ A whole service, [`examples/shortlink`](examples/shortlink), is a URL shortener 
 
 | Middleware | What it does | Where it goes |
 |---|---|---|
-| [`middleware.RequestID`](https://pkg.go.dev/github.com/iaxel/tyr/middleware#RequestID) | Keeps a valid `X-Request-ID` or makes a UUIDv7, and puts it in the response and the context | first |
-| [`middleware.Logger`](https://pkg.go.dev/github.com/iaxel/tyr/middleware#Logger) | Writes a record per request: the method, the route, the operation, the status and the duration | under RequestID |
-| [`middleware.Recover`](https://pkg.go.dev/github.com/iaxel/tyr/middleware#Recover) | Turns a panic into a 500 problem and logs it with the stack | under Logger |
+| [`middleware.RequestID`](https://pkg.go.dev/github.com/tyr-go/tyr/middleware#RequestID) | Keeps a valid `X-Request-ID` or makes a UUIDv7, and puts it in the response and the context | first |
+| [`middleware.Logger`](https://pkg.go.dev/github.com/tyr-go/tyr/middleware#Logger) | Writes a record per request: the method, the route, the operation, the status and the duration | under RequestID |
+| [`middleware.Recover`](https://pkg.go.dev/github.com/tyr-go/tyr/middleware#Recover) | Turns a panic into a 500 problem and logs it with the stack | under Logger |
 | [`http.CrossOriginProtection`](https://pkg.go.dev/net/http#CrossOriginProtection) | Rejects unsafe cross-origin requests, against CSRF; from the standard library | under Recover |
-| [`rest.ProblemHandler`](https://pkg.go.dev/github.com/iaxel/tyr/rest#ProblemHandler) | Makes the 404 and 405 of the mux problems, as the errors of operations are | around the mux |
+| [`rest.ProblemHandler`](https://pkg.go.dev/github.com/tyr-go/tyr/rest#ProblemHandler) | Makes the 404 and 405 of the mux problems, as the errors of operations are | around the mux |
 
 `middleware.Chain` applies them, the first outermost. Any `func(http.Handler) http.Handler` goes in the chain, those of the standard library too, and middleware of your own, such as authentication, may go under all of them.
 

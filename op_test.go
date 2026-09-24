@@ -3,7 +3,7 @@ package tyr_test
 import (
 	"testing"
 
-	"github.com/iaxel/tyr"
+	"github.com/tyr-go/tyr"
 )
 
 func TestDefine(t *testing.T) {

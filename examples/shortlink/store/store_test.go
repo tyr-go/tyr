@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/iaxel/tyr/examples/shortlink/store"
+	"github.com/tyr-go/tyr/examples/shortlink/store"
 )
 
 func TestStore(t *testing.T) {

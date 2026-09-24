@@ -1,6 +1,6 @@
 // Package tyr provides typed operations: a handler is written once as a
 // plain func(ctx, Req) (Res, error), with no HTTP types, and transports
-// serve it, such as REST, see [github.com/iaxel/tyr/rest]. Whatever the
+// serve it, such as REST, see [github.com/tyr-go/tyr/rest]. Whatever the
 // transport, a call goes through [Operation.Call]: the request is decoded,
 // passed through the interceptors (see [API.Use]) and validated, and an
 // error of the handler becomes an [Error] of a [Kind].
@@ -9,7 +9,7 @@
 //
 // An operation may be defined apart from its handler, as a contract that
 // the server and its clients share, such as the typed client of
-// [github.com/iaxel/tyr/jsonrpc]:
+// [github.com/tyr-go/tyr/jsonrpc]:
 //
 //	var GetLink = tyr.Define[GetLinkReq, *Link]("links.get", rest.Route("GET /links/{code}"))
 //
@@ -50,7 +50,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/iaxel/tyr/internal/plan"
+	"github.com/tyr-go/tyr/internal/plan"
 )
 
 // Handler is the only shape business logic takes: a plain function of a

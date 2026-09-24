@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/iaxel/tyr"
-	"github.com/iaxel/tyr/ctxkey"
-	"github.com/iaxel/tyr/jsonrpc"
+	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/ctxkey"
+	"github.com/tyr-go/tyr/jsonrpc"
 )
 
 func TestInProcessPanicsOnNil(t *testing.T) {

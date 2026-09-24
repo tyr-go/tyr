@@ -4,9 +4,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/iaxel/tyr"
-	"github.com/iaxel/tyr/examples/shortlink/contract"
-	"github.com/iaxel/tyr/examples/shortlink/store"
+	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/examples/shortlink/contract"
+	"github.com/tyr-go/tyr/examples/shortlink/store"
 )
 
 func TestCreateTakenRandomCode(t *testing.T) {

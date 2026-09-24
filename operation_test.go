@@ -14,7 +14,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/iaxel/tyr"
+	"github.com/tyr-go/tyr"
 )
 
 // decodeTo returns a decode that fills in req, as a transport would.

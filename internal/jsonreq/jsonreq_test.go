@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/iaxel/tyr"
-	"github.com/iaxel/tyr/internal/jsonreq"
+	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/internal/jsonreq"
 )
 
 func TestIsJSON(t *testing.T) {

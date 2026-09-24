@@ -11,8 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/iaxel/tyr"
-	"github.com/iaxel/tyr/internal/jsonreq"
+	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/internal/jsonreq"
 )
 
 // handler is the http.Handler that Handler returns.

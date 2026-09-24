@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/iaxel/tyr"
-	"github.com/iaxel/tyr/internal/plan"
+	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/internal/plan"
 )
 
 // IsJSON reports whether contentType is a JSON media type: application/json

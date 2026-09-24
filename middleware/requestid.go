@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"uuid"
 
-	"github.com/iaxel/tyr"
-	"github.com/iaxel/tyr/internal/reqid"
+	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/internal/reqid"
 )
 
 // RequestID returns a middleware that gives every request an ID. It keeps

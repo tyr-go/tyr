@@ -7,8 +7,8 @@ import (
 	"testing"
 	"uuid"
 
-	"github.com/iaxel/tyr"
-	"github.com/iaxel/tyr/middleware"
+	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/middleware"
 )
 
 func TestRequestID(t *testing.T) {

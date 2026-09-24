@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/iaxel/tyr"
+	"github.com/tyr-go/tyr"
 )
 
 type SetExpiryReq struct {

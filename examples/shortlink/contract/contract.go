@@ -14,8 +14,8 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/iaxel/tyr"
-	"github.com/iaxel/tyr/rest"
+	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/rest"
 )
 
 // The operations of the service.

@@ -14,9 +14,9 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/iaxel/tyr"
-	"github.com/iaxel/tyr/internal/jsonreq"
-	"github.com/iaxel/tyr/internal/reqid"
+	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/internal/jsonreq"
+	"github.com/tyr-go/tyr/internal/reqid"
 )
 
 // Client calls operations over JSON-RPC 2.0, at an endpoint that

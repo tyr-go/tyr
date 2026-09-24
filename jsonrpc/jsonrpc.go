@@ -92,7 +92,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/iaxel/tyr"
+	"github.com/tyr-go/tyr"
 )
 
 // The defaults of the options.
@@ -126,7 +126,7 @@ func MaxBatch(n int) Option {
 // MaxBodyBytes limits the size of request bodies to n bytes, 1 MiB by
 // default; a larger body gets 413 Request Entity Too Large. The limit is on
 // the whole request, all the calls of a batch together, unlike that of
-// [github.com/iaxel/tyr/rest.MaxBodyBytes], which is set per operation.
+// [github.com/tyr-go/tyr/rest.MaxBodyBytes], which is set per operation.
 // MaxBodyBytes panics if n isn't positive.
 func MaxBodyBytes(n int64) Option {
 	if n <= 0 {

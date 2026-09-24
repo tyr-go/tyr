@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/iaxel/tyr/internal/plan/plantest"
+	"github.com/tyr-go/tyr/internal/plan/plantest"
 )
 
 // leaf is a JSON value of a string or a number and the field it comes from.

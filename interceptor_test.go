@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/iaxel/tyr"
-	"github.com/iaxel/tyr/ctxkey"
+	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/ctxkey"
 )
 
 // passThrough is an interceptor that only calls next.

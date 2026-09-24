@@ -20,8 +20,8 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/iaxel/tyr"
-	"github.com/iaxel/tyr/jsonrpc"
+	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/jsonrpc"
 )
 
 // echoOp is the contract of things.echo of echoAPI.
