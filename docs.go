@@ -42,6 +42,35 @@ type Info struct {
 	Description string // in Markdown
 }
 
+// SchemaNamer is implemented by a type that names its schemas in the
+// documents that transports make of an API, such as those of
+// [github.com/tyr-go/tyr/rest.Routes.OpenAPI]: the schema of the type in
+// results is named SchemaName(), and that in requests SchemaName()+"Input".
+// Without the method, a schema is named after its Go type, such as Link and
+// LinkInput, and generic types after their type arguments too, such as
+// Page_Link. Only a struct type that JSON writes as an object has named
+// schemas.
+//
+// A name depends on its type and direction only, so that adding an
+// operation or changing a validate tag renames nothing. Two types of one
+// name make a transport panic when it makes its document, rather than
+// rename one of them behind the back of the clients that generated code
+// from it; SchemaName settles it:
+//
+//	func (Link) SchemaName() string { return "ShortLink" } // ShortLink and ShortLinkInput
+//
+// The name must not depend on the value, and it is letters, digits, '.',
+// '-' and '_'. A type that the method can't be added to, as one of another
+// package, or an instantiation of a generic type gets a name of its own as
+// a defined type: type BillingLink billing.Link. A defined type has the
+// fields of the original but none of the methods declared on it, such as
+// MarshalJSON, MarshalText or Validate, so the way is only for types
+// without such methods: otherwise the JSON on the wire changes, or a check
+// goes missing.
+type SchemaNamer interface {
+	SchemaName() string
+}
+
 // The keys of the documentation; Operation.Doc reads them.
 var (
 	summaryKey     = NewMetaKey[string]("tyr.summary")

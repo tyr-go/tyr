@@ -1,9 +1,9 @@
 {
   "schema": {
-    "$ref": "#/$defs/node"
+    "$ref": "#/$defs/nodeInput"
   },
   "$defs": {
-    "node": {
+    "nodeInput": {
       "type": "object",
       "properties": {
         "name": {
@@ -13,7 +13,7 @@
         "children": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/node"
+            "$ref": "#/$defs/nodeInput"
           }
         }
       },

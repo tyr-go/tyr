@@ -2,11 +2,16 @@ package rest_test
 
 import (
 	"context"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
+	"maps"
 	"net/http"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/internal/plan/plantest"
 	"github.com/tyr-go/tyr/rest"
 )
 
@@ -101,6 +106,67 @@ func TestOpenAPI(t *testing.T) {
 	golden(t, "openapi", rec.Body.Bytes())
 }
 
+// Types that the stable names of schemas are checked with.
+type (
+	stableAddress struct {
+		City string `json:"city"`
+	}
+	stableSignUpReq struct {
+		Name    string        `json:"name" validate:"required"`
+		Address stableAddress `json:"address"`
+	}
+	// stableTag has the same schemas in both directions: its member is
+	// optional both ways.
+	stableTag struct {
+		Name string `json:"name,omitempty"`
+	}
+	stableTagsReq struct {
+		Tags []stableTag `json:"tags"`
+	}
+)
+
+func TestOpenAPIStableNames(t *testing.T) {
+	// A schema is named after its type and direction only: operations
+	// added to an API rename none of those it had, and requests get the
+	// suffix Input, whether their schemas differ from those of results or
+	// not, and whether the type is in results at all.
+	names := func(api *tyr.API) []string {
+		rec := do(rest.Mount(http.NewServeMux(), api).OpenAPI(tyr.Info{Title: "links", Version: "1.0.0"}), "GET", "/openapi.json", "", "")
+		var doc struct {
+			Components struct {
+				Schemas map[string]jsontext.Value `json:"schemas"`
+			} `json:"components"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+			t.Fatal(err)
+		}
+		return slices.Sorted(maps.Keys(doc.Components.Schemas))
+	}
+	build := func(more bool) *tyr.API {
+		api := newAPI()
+		api.Handle("links.get", func(ctx context.Context, req docGetReq) (docLink, error) { return docLink{}, nil },
+			rest.Route("GET /links/{code}"))
+		if more {
+			api.Handle("links.import", func(ctx context.Context, req docImportReq) (docImported, error) { return docImported{}, nil },
+				rest.Route("POST /links/import"))
+			api.Handle("users.signup", func(ctx context.Context, req stableSignUpReq) (struct{}, error) { return struct{}{}, nil },
+				rest.Route("POST /users"))
+			api.Handle("tags.set", func(ctx context.Context, req stableTagsReq) ([]stableTag, error) { return nil, nil },
+				rest.Route("PUT /tags"))
+		}
+		return api
+	}
+
+	few, many := names(build(false)), names(build(true))
+	if want := []string{"Problem", "Violation", "docLink"}; !slices.Equal(few, want) {
+		t.Errorf("schemas of one operation = %q, want %q", few, want)
+	}
+	want := []string{"Problem", "Violation", "docImported", "docLink", "docLinkInput", "stableAddressInput", "stableTag", "stableTagInput"}
+	if !slices.Equal(many, want) {
+		t.Errorf("schemas of more operations = %q, want %q", many, want)
+	}
+}
+
 func TestOpenAPIPanics(t *testing.T) {
 	info := tyr.Info{Title: "links", Version: "1.0.0"}
 	noop := func(ctx context.Context, req struct{}) (string, error) { return "", nil }
@@ -133,6 +199,25 @@ func TestOpenAPIPanics(t *testing.T) {
 			api.Handle("jobs.wait", func(ctx context.Context, req waitReq) (string, error) { return "", nil }, rest.Route("POST /wait"))
 			openAPI(api, info)()
 		}, `rest: operation "jobs.wait": rest_test.waitReq.For: json/v2 has no representation of time.Duration`},
+		{"two types of one schema name", func() {
+			type Inner struct {
+				Name string `json:"name"`
+			}
+			api := newAPI()
+			api.Handle("inner.ours", func(ctx context.Context, req struct{}) (Inner, error) { return Inner{}, nil }, rest.Route("GET /ours"))
+			api.Handle("inner.theirs", func(ctx context.Context, req struct{}) (plantest.Inner, error) { return plantest.Inner{}, nil }, rest.Route("GET /theirs"))
+			openAPI(api, info)()
+		}, `rest: OpenAPI: two types have the schema name "Inner": github.com/tyr-go/tyr/rest_test.Inner and ` +
+			`github.com/tyr-go/tyr/internal/plan/plantest.Inner; give one of them a method SchemaName() string`},
+		{"the name of the problems", func() {
+			type Problem struct {
+				Title string `json:"title"`
+			}
+			api := newAPI()
+			api.Handle("problems.get", func(ctx context.Context, req struct{}) (Problem, error) { return Problem{}, nil }, rest.Route("GET /problem"))
+			openAPI(api, info)()
+		}, `rest: OpenAPI: two types have the schema name "Problem": github.com/tyr-go/tyr/rest.problem and ` +
+			`github.com/tyr-go/tyr/rest_test.Problem; give one of them a method SchemaName() string`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

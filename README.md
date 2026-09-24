@@ -320,7 +320,7 @@ mux.Handle("POST /rpc", jsonrpc.Handler(api, jsonrpc.Discover(tyr.Info{Title: "l
 // => error 404: not found
 ```
 
-The schemas say what the server reads and writes, as `encoding/json/v2` does, but for the gaps that [Limitations](#limitations) lists: the elements of slices and maps, which the server doesn't check, and JSON that fits a schema but doesn't decode. A member of a request is required if the server rejects the request without it, and a type whose schemas of requests and results differ gets two, such as `Link` and `LinkInput`.
+The schemas say what the server reads and writes, as `encoding/json/v2` does, but for the gaps that [Limitations](#limitations) lists: the elements of slices and maps, which the server doesn't check, and JSON that fits a schema but doesn't decode. A member of a request is required if the server rejects the request without it. The schema of a type is named after it and its direction only, `Link` in results and `LinkInput` in requests, so that adding an operation renames no schema of the code generated from the documents; two types of one name make the document panic rather than get renamed, and a method [`SchemaName`](https://pkg.go.dev/github.com/tyr-go/tyr#SchemaNamer) settles it. The body of a request is part of its operation.
 
 ### [Log with the request ID and the operation](https://pkg.go.dev/github.com/tyr-go/tyr#example-NewLogHandler)
 
@@ -404,6 +404,7 @@ A whole service, [`examples/shortlink`](examples/shortlink), is a URL shortener 
 - [x] v0.2: JSON-RPC 2.0, the `canceled` kind, `RequestInfo` for access logs and metrics
 - [x] v0.3: contracts (`Define`), a typed JSON-RPC client, an in-process client for tests
 - [x] v0.4: OpenAPI 3.1 and OpenRPC documents, with JSON Schemas of the same types; problem types of kinds
+- [x] v0.5: stable names of the schemas of the documents, and names of one's own by `SchemaName`
 - [ ] OpenTelemetry, timeouts, CORS and an adapter for all of go-playground/validator
 - [ ] Later: a REST client, a TypeScript client, NATS and MCP
 

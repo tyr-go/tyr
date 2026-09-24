@@ -89,7 +89,11 @@ func openRPCOf(api *tyr.API, info tyr.Info) jsontext.Value {
 		}
 		doc.Methods = append(doc.Methods, m)
 	}
-	for _, d := range schemas.Defs() {
+	defs, err := schemas.Defs()
+	if err != nil {
+		panic("jsonrpc: Discover: " + err.Error())
+	}
+	for _, d := range defs {
 		doc.Components.Schemas = append(doc.Components.Schemas, jsonschema.Property{Name: d.Name, Schema: d.Schema})
 	}
 	data, err := json.Marshal(doc)

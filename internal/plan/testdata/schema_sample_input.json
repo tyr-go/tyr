@@ -1,9 +1,9 @@
 {
   "schema": {
-    "$ref": "#/$defs/sample"
+    "$ref": "#/$defs/sampleInput"
   },
   "$defs": {
-    "Inner": {
+    "InnerInput": {
       "type": "object",
       "properties": {
         "code": {
@@ -14,7 +14,7 @@
         }
       }
     },
-    "sample": {
+    "sampleInput": {
       "type": "object",
       "properties": {
         "code": {
@@ -66,7 +66,7 @@
         "Inner": {
           "anyOf": [
             {
-              "$ref": "#/$defs/Inner"
+              "$ref": "#/$defs/InnerInput"
             },
             {
               "type": "null"

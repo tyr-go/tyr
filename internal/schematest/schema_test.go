@@ -44,8 +44,12 @@ func compile(t *testing.T, typ reflect.Type, dir plan.Direction, d dialect) *jso
 	if err != nil {
 		t.Fatalf("Of(%v, %v) error = %v", typ, dir, err)
 	}
+	all, err := s.Defs() // names the references first
+	if err != nil {
+		t.Fatal(err)
+	}
 	defs := make(map[string]any)
-	for _, def := range s.Defs() { // names the references first
+	for _, def := range all {
 		defs[def.Name] = decode(t, marshal(t, def.Schema))
 	}
 	root := decode(t, marshal(t, sch))

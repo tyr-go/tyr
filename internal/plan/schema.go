@@ -1,7 +1,6 @@
 package plan
 
 import (
-	"bytes"
 	"encoding"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
@@ -42,8 +41,8 @@ func (d Direction) String() string {
 // Schemas builds the JSON Schemas of the values of Go types, as
 // encoding/json/v2 writes and reads them: the members of a struct are
 // those of members, the plan that binding and validation follow too.
-// A named struct type becomes a definition, one per direction unless both
-// come out the same, and schemas reference it; see Defs.
+// A named struct type becomes a definition per direction, and schemas
+// reference it; see Defs.
 type Schemas struct {
 	prefix string // of the references to definitions
 	defs   map[defKey]*jsonschema.Def
@@ -63,8 +62,9 @@ func NewSchemas(prefix string) *Schemas {
 	return &Schemas{prefix: prefix, defs: make(map[defKey]*jsonschema.Def), names: make(map[reflect.Type]string)}
 }
 
-// Name makes name the name of the definition of the struct type t, instead
-// of the name of the type.
+// Name makes name the base name of the definitions of the struct type t,
+// instead of that of its method SchemaName or of the type, for a type of
+// the transports, such as the problem of rest.
 func (s *Schemas) Name(t reflect.Type, name string) {
 	s.names[t] = name
 }
@@ -389,119 +389,83 @@ func withRules(sch *jsonschema.Schema, rules []rule, f form) *jsonschema.Schema 
 }
 
 // Defs completes the definitions of the schemas built so far and returns
-// them in the order of their names. A struct type whose input and output
-// schemas come out the same has one definition, named after the type; if
-// they differ, the input one gets the suffix Input. Types of one name get
-// the name of their package, and then their whole import path, in front.
+// them in the order of their names. A definition is named after its type
+// and its direction only, so that adding a schema renames none and a
+// change of a validate tag renames nothing: the base name, which Name or
+// the method SchemaName of the type gives, or else the name of the type,
+// and for Input the suffix Input. Defs fails on a base name that isn't
+// letters, digits, '.', '-' and '_', and on two definitions of one name.
 // Build every schema before Defs: the references get their names from it.
-func (s *Schemas) Defs() []*jsonschema.Def {
-	merged := s.merge()
-
-	// The definitions to name: the input one of a merged type is the
-	// output one.
-	type entry struct {
-		key   defKey
-		base  string
-		input bool
-	}
-	var entries []entry
+func (s *Schemas) Defs() ([]*jsonschema.Def, error) {
+	byName := make(map[string]defKey, len(s.order))
+	defs := make([]*jsonschema.Def, 0, len(s.order))
 	for _, key := range s.order {
-		_, both := s.defs[defKey{key.t, Output}]
-		if key.dir == Input && merged[key.t] {
-			continue
+		base, err := s.baseName(key.t)
+		if err != nil {
+			return nil, err
 		}
-		base, ok := s.names[key.t]
-		if !ok {
-			base = typeName(key.t)
+		name := base
+		if key.dir == Input {
+			name += "Input"
 		}
-		entries = append(entries, entry{key: key, base: base, input: key.dir == Input && both})
-	}
-
-	names := make([]string, len(entries))
-	levels := make([]int, len(entries))
-	for {
-		byName := make(map[string][]int)
-		for i, e := range entries {
-			names[i] = qualified(e.key.t, e.base, levels[i])
-			if e.input {
-				names[i] += "Input"
-			}
-			byName[names[i]] = append(byName[names[i]], i)
+		if other, ok := byName[name]; ok {
+			return nil, fmt.Errorf("two types have the schema name %q: %s; give one of them a method SchemaName() string",
+				name, describeKeys(other, key))
 		}
-		collided := false
-		for _, same := range byName {
-			if len(same) > 1 {
-				for _, i := range same {
-					if levels[i] < 2 {
-						levels[i]++
-						collided = true
-					}
-				}
-			}
-		}
-		if !collided {
-			break
-		}
-	}
-	// Still the same: the same name and path, as with a type named after
-	// the Input definition of another. Number them.
-	seen := make(map[string]int)
-	for i := range names {
-		seen[names[i]]++
-		if n := seen[names[i]]; n > 1 {
-			names[i] += "_" + strconv.Itoa(n)
-		}
-	}
-
-	defs := make([]*jsonschema.Def, len(entries))
-	for i, e := range entries {
-		d := s.defs[e.key]
-		d.Name, d.Ref = names[i], s.prefix+names[i]
-		defs[i] = d
-	}
-	for t := range merged {
-		in, out := s.defs[defKey{t, Input}], s.defs[defKey{t, Output}]
-		in.Name, in.Ref = out.Name, out.Ref
+		byName[name] = key
+		d := s.defs[key]
+		d.Name, d.Ref = name, s.prefix+name
+		defs = append(defs, d)
 	}
 	slices.SortFunc(defs, func(a, b *jsonschema.Def) int { return strings.Compare(a.Name, b.Name) })
-	return defs
+	return defs, nil
 }
 
-// merge returns the struct types whose input and output schemas are the
-// same, those of the types they reference being the same too: it starts
-// from every type with both and drops those that differ until none does,
-// so that types which reference each other stay together if they can.
-func (s *Schemas) merge() map[reflect.Type]bool {
-	ids := make(map[reflect.Type]int)
-	merged := make(map[reflect.Type]bool)
-	for _, key := range s.order {
-		if _, ok := ids[key.t]; !ok {
-			ids[key.t] = len(ids)
-		}
-		if _, both := s.defs[defKey{key.t, Output}]; both && key.dir == Input {
-			merged[key.t] = true
-		}
+// schemaNamer is the method by which a type names its schemas, as
+// tyr.SchemaNamer documents it.
+type schemaNamer interface {
+	SchemaName() string
+}
+
+// baseName returns the base name of the definitions of the named struct
+// type t, as described at Defs.
+func (s *Schemas) baseName(t reflect.Type) (string, error) {
+	if name, ok := s.names[t]; ok {
+		return name, nil
 	}
-	for changed := true; changed; {
-		// References stand for their definitions: the type, and the
-		// direction unless it's merged.
-		for key, d := range s.defs {
-			d.Ref = strconv.Itoa(ids[key.t])
-			if key.dir == Input && !merged[key.t] {
-				d.Ref += "/input"
-			}
-		}
-		changed = false
-		for t := range merged {
-			in, _ := json.Marshal(s.defs[defKey{t, Input}].Schema)
-			out, _ := json.Marshal(s.defs[defKey{t, Output}].Schema)
-			if !bytes.Equal(in, out) {
-				delete(merged, t)
-				changed = true
-			}
-		}
+	if !reflect.PointerTo(t).Implements(reflect.TypeFor[schemaNamer]()) {
+		return typeName(t), nil
 	}
-	return merged
+	name := reflect.New(t).Interface().(schemaNamer).SchemaName()
+	if name == "" || safeName(name) != name {
+		return "", fmt.Errorf("%s.SchemaName() = %q, want letters, digits, '.', '-' and '_'", qualifiedName(t), name)
+	}
+	return name, nil
+}
+
+// describeKeys describes the definitions a and b, of one name, for an
+// error: by their types with their import paths, and by their directions
+// if those differ.
+func describeKeys(a, b defKey) string {
+	if a.dir == b.dir {
+		return qualifiedName(a.t) + " and " + qualifiedName(b.t)
+	}
+	of := func(k defKey) string {
+		if k.dir == Input {
+			return "the requests of " + qualifiedName(k.t)
+		}
+		return "the results of " + qualifiedName(k.t)
+	}
+	return of(a) + " and " + of(b)
+}
+
+// qualifiedName returns the name of the named type t with its import path,
+// such as github.com/acme/links.Link.
+func qualifiedName(t reflect.Type) string {
+	if t.PkgPath() == "" {
+		return t.String()
+	}
+	return t.PkgPath() + "." + t.Name()
 }
 
 // typeName returns the name of the named type t for its definition: that of
@@ -521,19 +485,6 @@ func typeName(t reflect.Type) string {
 		parts = append(parts, tok)
 	}
 	return safeName(strings.Join(parts, "_"))
-}
-
-// qualified returns base with, at level 1, the name of the package of t in
-// front and, at level 2, its whole import path.
-func qualified(t reflect.Type, base string, level int) string {
-	path := t.PkgPath()
-	switch {
-	case level == 0 || path == "":
-		return base
-	case level == 1:
-		return safeName(path[strings.LastIndexByte(path, '/')+1:]) + "." + base
-	}
-	return safeName(strings.ReplaceAll(path, "/", ".")) + "." + base
 }
 
 // safeName returns name with the characters that the names of definitions

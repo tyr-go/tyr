@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/tyr-go/tyr"
+	"github.com/tyr-go/tyr/internal/plan/plantest"
 	"github.com/tyr-go/tyr/jsonrpc"
 )
 
@@ -146,6 +147,16 @@ func TestDiscoverPanics(t *testing.T) {
 			api.Handle("jobs.wait", func(ctx context.Context, req waitReq) (string, error) { return "", nil })
 			jsonrpc.Handler(api, jsonrpc.Discover(info))
 		}, `jsonrpc: Discover: operation "jobs.wait": jsonrpc_test.waitReq.For: json/v2 has no representation of time.Duration`},
+		{"two types of one schema name", func() {
+			type Inner struct {
+				Name string `json:"name"`
+			}
+			api := newAPI()
+			api.Handle("inner.ours", func(ctx context.Context, req struct{}) (Inner, error) { return Inner{}, nil })
+			api.Handle("inner.theirs", func(ctx context.Context, req struct{}) (plantest.Inner, error) { return plantest.Inner{}, nil })
+			jsonrpc.Handler(api, jsonrpc.Discover(info))
+		}, `jsonrpc: Discover: two types have the schema name "Inner": github.com/tyr-go/tyr/jsonrpc_test.Inner and ` +
+			`github.com/tyr-go/tyr/internal/plan/plantest.Inner; give one of them a method SchemaName() string`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

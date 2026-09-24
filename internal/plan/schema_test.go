@@ -90,7 +90,9 @@ func field(t *testing.T, typ reflect.Type, tag string, dir Direction) Member {
 	if err != nil {
 		t.Fatalf("Members(%v) error = %v", st, err)
 	}
-	s.Defs() // names the references
+	if _, err := s.Defs(); err != nil { // names the references
+		t.Fatal(err)
+	}
 	return ms[0]
 }
 
@@ -138,8 +140,8 @@ func TestSchemaKeywords(t *testing.T) {
 		{"oneof of an int of text", reflect.TypeFor[plantest.Level](), `" validate:"oneof=1 2"`, `{"type":"string"}`, true},
 		{"min of an int of JSON", reflect.TypeFor[plantest.Cents](), `" validate:"omitempty,min=100"`, `{}`, false},
 		{"oneof of a pointer to an int of text", reflect.TypeFor[*plantest.Level](), `" validate:"omitempty,oneof=1 2"`, `{"type":["string","null"]}`, false},
-		{"required struct", reflect.TypeFor[plantest.Inner](), `" validate:"required"`, `{"$ref":"#/$defs/Inner"}`, true},
-		{"struct with required members", reflect.TypeFor[plantest.Profile](), `"`, `{"$ref":"#/$defs/Profile"}`, true},
+		{"required struct", reflect.TypeFor[plantest.Inner](), `" validate:"required"`, `{"$ref":"#/$defs/InnerInput"}`, true},
+		{"struct with required members", reflect.TypeFor[plantest.Profile](), `"`, `{"$ref":"#/$defs/ProfileInput"}`, true},
 		{"described", reflect.TypeFor[string](), `" doc:"The code."`, `{"type":"string"}`, false},
 	}
 	for _, tt := range tests {
@@ -211,71 +213,160 @@ type opts struct {
 	A string `json:"a,omitempty"`
 }
 
+// named names its schemas.
+type named struct {
+	X int `json:"x"`
+}
+
+func (named) SchemaName() string { return "Point" }
+
+// alsoNamed names its schemas as named does, by a method of its pointer.
+type alsoNamed struct {
+	Y int `json:"y"`
+}
+
+func (*alsoNamed) SchemaName() string { return "Point" }
+
+// badlyNamed names its schemas with a space, which a name can't have.
+type badlyNamed struct {
+	Z int `json:"z"`
+}
+
+func (badlyNamed) SchemaName() string { return "a point" }
+
 // both returns the names of the definitions that the schemas of types
-// make, in both directions for those in both, and the references to them.
-func both(t *testing.T, s *Schemas, inputs, outputs []reflect.Type) (names []string, refs map[string]string) {
-	t.Helper()
+// make, in both directions for those in both, and the references to them,
+// or the error of Defs.
+func both(s *Schemas, inputs, outputs []reflect.Type) (names []string, refs map[string]string, err error) {
 	refs = make(map[string]string)
 	schemas := make(map[string]*jsonschema.Schema)
 	for dir, types := range [][]reflect.Type{inputs, outputs} {
 		for _, typ := range types {
 			sch, err := s.Of(typ, Direction(dir))
 			if err != nil {
-				t.Fatal(err)
+				return nil, nil, err
 			}
 			schemas[typ.String()+"/"+Direction(dir).String()] = sch
 		}
 	}
-	for _, d := range s.Defs() {
+	defs, err := s.Defs()
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, d := range defs {
 		names = append(names, d.Name)
 	}
 	for key, sch := range schemas {
 		refs[key] = sch.Ref.Ref
 	}
-	return names, refs
+	return names, refs, nil
 }
 
 func TestSchemaNames(t *testing.T) {
-	s := NewSchemas("#/components/schemas/")
-	names, refs := both(t, s,
-		[]reflect.Type{reflect.TypeFor[node](), reflect.TypeFor[opts]()},
+	// A definition is named after its type and its direction only: the
+	// name of the type, or that of its method SchemaName, and Input for
+	// requests, even where the schemas of both directions are the same, as
+	// those of opts are.
+	names, refs, err := both(NewSchemas("#/components/schemas/"),
+		[]reflect.Type{reflect.TypeFor[node](), reflect.TypeFor[opts](), reflect.TypeFor[named]()},
 		[]reflect.Type{
-			reflect.TypeFor[Base](), reflect.TypeFor[plantest.Base](), reflect.TypeFor[page[plantest.Inner]](),
-			reflect.TypeFor[node](), reflect.TypeFor[opts](), reflect.TypeFor[nodeInput](),
+			reflect.TypeFor[Base](), reflect.TypeFor[page[plantest.Inner]](), reflect.TypeFor[node](),
+			reflect.TypeFor[opts](), reflect.TypeFor[named](),
 		})
-	// Types of one name get their packages; the input of node and the type
-	// nodeInput share a path too, so they get numbers.
-	want := []string{
-		"Inner",
-		"github.com.tyr-go.tyr.internal.plan.nodeInput",
-		"github.com.tyr-go.tyr.internal.plan.nodeInput_2",
-		"node",
-		"opts",
-		"page_Inner",
-		"plan.Base",
-		"plantest.Base",
+	if err != nil {
+		t.Fatal(err)
 	}
+	want := []string{"Base", "Inner", "Point", "PointInput", "node", "nodeInput", "opts", "optsInput", "page_Inner"}
 	if !slices.Equal(names, want) {
 		t.Errorf("Defs() names:\n%q\nwant:\n%q", names, want)
 	}
 	for key, want := range map[string]string{
-		"plan.node/output":     "#/components/schemas/node",
-		"plan.node/input":      "#/components/schemas/github.com.tyr-go.tyr.internal.plan.nodeInput",
-		"plan.opts/input":      "#/components/schemas/opts", // the same as the output: one definition
-		"plan.opts/output":     "#/components/schemas/opts",
-		"plan.Base/output":     "#/components/schemas/plan.Base",
-		"plantest.Base/output": "#/components/schemas/plantest.Base",
+		"plan.node/output":  "#/components/schemas/node",
+		"plan.node/input":   "#/components/schemas/nodeInput",
+		"plan.opts/output":  "#/components/schemas/opts",
+		"plan.opts/input":   "#/components/schemas/optsInput",
+		"plan.named/output": "#/components/schemas/Point",
+		"plan.named/input":  "#/components/schemas/PointInput",
+		"plan.Base/output":  "#/components/schemas/Base",
 	} {
 		if refs[key] != want {
 			t.Errorf("reference of %s = %q, want %q", key, refs[key], want)
 		}
 	}
 
-	// A name of one's own.
-	s = NewSchemas("#/$defs/")
-	s.Name(reflect.TypeFor[Base](), "Point")
-	if names, _ := both(t, s, nil, []reflect.Type{reflect.TypeFor[Base]()}); !slices.Equal(names, []string{"Point"}) {
-		t.Errorf("Defs() with Name = %q, want [Point]", names)
+	// A name that a transport gives a type of its own, over the others.
+	s := NewSchemas("#/$defs/")
+	s.Name(reflect.TypeFor[named](), "Problem")
+	if names, _, err := both(s, nil, []reflect.Type{reflect.TypeFor[named]()}); err != nil || !slices.Equal(names, []string{"Problem"}) {
+		t.Errorf("Defs() with Name = %q, %v; want [Problem]", names, err)
+	}
+}
+
+func TestSchemaNamesAreStable(t *testing.T) {
+	// More types around them rename none of the definitions: those of node
+	// and opts have the same names alone and among others, which the old
+	// scheme renamed, merged or numbered.
+	_, alone, err := both(NewSchemas("#/$defs/"),
+		[]reflect.Type{reflect.TypeFor[node]()},
+		[]reflect.Type{reflect.TypeFor[opts]()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, crowded, err := both(NewSchemas("#/$defs/"),
+		[]reflect.Type{reflect.TypeFor[opts](), reflect.TypeFor[sample](), reflect.TypeFor[node](), reflect.TypeFor[named]()},
+		[]reflect.Type{
+			reflect.TypeFor[embedded](), reflect.TypeFor[node](), reflect.TypeFor[page[plantest.Inner]](),
+			reflect.TypeFor[opts](), reflect.TypeFor[plantest.Base](),
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, ref := range alone {
+		if crowded[key] != ref {
+			t.Errorf("reference of %s = %q among other types, %q alone", key, crowded[key], ref)
+		}
+	}
+}
+
+func TestSchemaNameCollisions(t *testing.T) {
+	const hint = "; give one of them a method SchemaName() string"
+	tests := []struct {
+		name            string
+		inputs, outputs []reflect.Type
+		want            string
+	}{
+		{
+			name:    "types of one name",
+			outputs: []reflect.Type{reflect.TypeFor[Base](), reflect.TypeFor[plantest.Base]()},
+			want: `two types have the schema name "Base": github.com/tyr-go/tyr/internal/plan.Base and ` +
+				`github.com/tyr-go/tyr/internal/plan/plantest.Base` + hint,
+		},
+		{
+			name:    "a type named as the requests of another",
+			inputs:  []reflect.Type{reflect.TypeFor[node]()},
+			outputs: []reflect.Type{reflect.TypeFor[nodeInput]()},
+			want: `two types have the schema name "nodeInput": the requests of github.com/tyr-go/tyr/internal/plan.node and ` +
+				`the results of github.com/tyr-go/tyr/internal/plan.nodeInput` + hint,
+		},
+		{
+			name:    "names of their own",
+			outputs: []reflect.Type{reflect.TypeFor[named](), reflect.TypeFor[alsoNamed]()},
+			want: `two types have the schema name "Point": github.com/tyr-go/tyr/internal/plan.named and ` +
+				`github.com/tyr-go/tyr/internal/plan.alsoNamed` + hint,
+		},
+		{
+			name:    "a name that can't be",
+			outputs: []reflect.Type{reflect.TypeFor[badlyNamed]()},
+			want:    `github.com/tyr-go/tyr/internal/plan.badlyNamed.SchemaName() = "a point", want letters, digits, '.', '-' and '_'`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := both(NewSchemas("#/$defs/"), tt.inputs, tt.outputs)
+			if err == nil || err.Error() != tt.want {
+				t.Errorf("Defs() error = %v\nwant %s", err, tt.want)
+			}
+		})
 	}
 }
 
@@ -352,8 +443,12 @@ func TestSchemaGolden(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Of(%v, %v) error = %v", typ, dir, err)
 			}
+			all, err := s.Defs()
+			if err != nil {
+				t.Fatal(err)
+			}
 			var defs jsonschema.Properties
-			for _, d := range s.Defs() {
+			for _, d := range all {
 				defs = append(defs, jsonschema.Property{Name: d.Name, Schema: d.Schema})
 			}
 			got, err := json.Marshal(struct {

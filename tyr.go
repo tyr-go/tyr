@@ -30,6 +30,10 @@
 //	var GetLink = tyr.Define[GetLinkReq, *Link]("links.get", tyr.Summary("Get a link"), tyr.Errors(tyr.KindNotFound)).
 //		Example("go", GetLinkReq{Code: "go"}, &Link{Code: "go", URL: "https://go.dev"})
 //
+// The schemas of the documents are named after their types, Link in
+// results and LinkInput in requests, and a type may name its own; see
+// [SchemaNamer].
+//
 // # Validation
 //
 // [Operation.Call] checks a request against the validate tags of its

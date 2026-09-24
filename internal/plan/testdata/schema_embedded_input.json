@@ -1,9 +1,9 @@
 {
   "schema": {
-    "$ref": "#/$defs/embedded"
+    "$ref": "#/$defs/embeddedInput"
   },
   "$defs": {
-    "embedded": {
+    "embeddedInput": {
       "type": "object",
       "properties": {
         "limit": {

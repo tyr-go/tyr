@@ -32,7 +32,9 @@ import (
 // [tyr.Errors], as application/problem+json, by status; default stands for
 // the rest. The schemas are JSON Schema 2020-12 and say what the server
 // reads and writes, as json/v2 does; the validate tags of requests add
-// their constraints, and doc tags describe fields.
+// their constraints, and doc tags describe fields. The schemas of struct
+// types are in components, named after their types, such as Link for
+// results and LinkInput for requests; see [tyr.SchemaNamer].
 //
 // The schemas fall short of the server in two ways. The schema of an
 // element of a slice or a map is that of its type, with the constraints of
@@ -44,8 +46,9 @@ import (
 //
 // OpenAPI panics if info has no Title or Version, a route has a method that
 // OpenAPI 3.1 doesn't know, two routes of different hosts have the same
-// method and path, or a type of a request or a result has a field that
-// JSON can't carry, such as a time.Duration.
+// method and path, a type of a request or a result has a field that JSON
+// can't carry, such as a time.Duration, or two types have one schema name,
+// Problem and Violation of rest and tyr included.
 func (rs *Routes) OpenAPI(info tyr.Info) http.Handler {
 	if info.Title == "" || info.Version == "" {
 		panic("rest: OpenAPI: the Info needs a Title and a Version")
@@ -214,7 +217,11 @@ func openAPIOf(rs *Routes, info tyr.Info) *openAPIDoc {
 		*slot = o
 	}
 
-	for _, d := range b.schemas.Defs() {
+	defs, err := b.schemas.Defs()
+	if err != nil {
+		panic("rest: OpenAPI: " + err.Error())
+	}
+	for _, d := range defs {
 		doc.Components.Schemas = append(doc.Components.Schemas, jsonschema.Property{Name: d.Name, Schema: d.Schema})
 	}
 	describeProblem(problemRef.Ref.Schema)

@@ -151,7 +151,9 @@ func MaxBodyBytes(n int64) HandlerOption {
 // may get, and the kinds of [tyr.Errors], one per code. The schemas are JSON
 // Schema Draft 7 and say what the server reads and writes, as json/v2 does;
 // the validate tags of requests add their constraints, and doc tags
-// describe fields.
+// describe fields. The schemas of struct types are in components, named
+// after their types, such as Link for results and LinkInput for requests;
+// see [tyr.SchemaNamer].
 //
 // The schemas fall short of the server in two ways. The schema of an
 // element of a slice or a map is that of its type, with the constraints of
@@ -163,7 +165,7 @@ func MaxBodyBytes(n int64) HandlerOption {
 //
 // The document is made once, by Handler, which panics on a type of a
 // request or a result with a field that JSON can't carry, such as a
-// time.Duration. rpc.discover isn't an operation: the interceptors don't
+// time.Duration, and on two types of one schema name. rpc.discover isn't an operation: the interceptors don't
 // see it, and its params are ignored. A batch gets the document once: a
 // second rpc.discover in it gets -32600 Invalid Request, so that a small
 // request can't ask for many copies of it. Without Discover, it is a method
