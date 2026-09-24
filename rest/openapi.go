@@ -19,7 +19,7 @@ import (
 // OpenAPI returns a handler that serves the OpenAPI 3.1 document of the
 // routes, as JSON, with info on the API; the document shows the problem
 // types and the challenges of the options of [Mount]. The document is made
-// once, here.
+// once, here; [Routes.OpenAPIJSON] returns it without a server.
 //
 //	routes := rest.Mount(mux, api)
 //	mux.Handle("GET /openapi.json", routes.OpenAPI(tyr.Info{Title: "shortlink", Version: "1.0.0"}))
@@ -28,8 +28,8 @@ import (
 // documentation (see [tyr.Doc]). The fields of its request tagged path,
 // query or header are its parameters, the other members its JSON body,
 // whose schema is part of the operation, and the fields of its result
-// tagged header the headers of its success. Its
-// errors are invalid_argument, which any request may get, and the kinds of
+// tagged header the headers of its success. Its errors are
+// invalid_argument, which any request may get, and the kinds of
 // [tyr.Errors], as application/problem+json, by status: the schema of a
 // status is the problem with the kinds of the status and their problem
 // types as constants, or enums if the status has several, so that a client
@@ -37,11 +37,13 @@ import (
 // problem types are in the document. default stands for the rest.
 // Middleware that answers a request of an operation with a status that the
 // operation declares must write a problem of a kind, see
-// [Routes.WriteError]. The schemas are JSON Schema 2020-12 and say what the server
-// reads and writes, as json/v2 does; the validate tags of requests add
-// their constraints, and doc tags describe fields. The schemas of struct
-// types are in components, named after their types, such as Link for
-// results and LinkInput for requests; see [tyr.SchemaNamer].
+// [Routes.WriteError].
+//
+// The schemas are JSON Schema 2020-12 and say what the server reads and
+// writes, as json/v2 does; the validate tags of requests add their
+// constraints, and doc tags describe fields. The schemas of struct types
+// are in components, named after their types, such as Link for results
+// and LinkInput for requests; see [tyr.SchemaNamer].
 //
 // The schemas fall short of the server in two ways. The schema of an
 // element of a slice or a map is that of its type, with the constraints of
@@ -57,14 +59,32 @@ import (
 // can't carry, such as a time.Duration, or two types have one schema name,
 // Problem and Violation of rest and tyr included.
 func (rs *Routes) OpenAPI(info tyr.Info) http.Handler {
+	return document(rs.openAPIJSON("OpenAPI", info))
+}
+
+// OpenAPIJSON returns the OpenAPI document of the routes as JSON, the bytes
+// that the handler of [Routes.OpenAPI] serves, for tools that need no
+// server, such as the generation of clients in CI:
+//
+//	routes := rest.Mount(http.NewServeMux(), api, opts...)
+//	err := os.WriteFile("openapi.json", routes.OpenAPIJSON(info), 0o644)
+//
+// It panics as OpenAPI does.
+func (rs *Routes) OpenAPIJSON(info tyr.Info) []byte {
+	return rs.openAPIJSON("OpenAPIJSON", info)
+}
+
+// openAPIJSON returns the OpenAPI document of the routes as JSON; method
+// names the method in panics.
+func (rs *Routes) openAPIJSON(method string, info tyr.Info) []byte {
 	if info.Title == "" || info.Version == "" {
-		panic("rest: OpenAPI: the Info needs a Title and a Version")
+		panic("rest: " + method + ": the Info needs a Title and a Version")
 	}
-	data, err := json.Marshal(openAPIOf(rs, info), jsontext.WithIndent("  "))
+	data, err := json.Marshal(openAPIOf(rs, info, method), jsontext.WithIndent("  "))
 	if err != nil {
-		panic("rest: OpenAPI: " + err.Error()) // a bug: every part encodes
+		panic("rest: " + method + ": " + err.Error()) // a bug: every part encodes
 	}
-	return document(data)
+	return data
 }
 
 // document serves a document as JSON.
@@ -187,14 +207,14 @@ func (o ordered[T]) get(name string) (T, bool) {
 }
 
 // openAPIOf returns the OpenAPI document of the routes, as Mount serves
-// them.
-func openAPIOf(rs *Routes, info tyr.Info) *openAPIDoc {
+// them; method names the method in panics.
+func openAPIOf(rs *Routes, info tyr.Info, method string) *openAPIDoc {
 	b := &openAPIBuilder{mount: rs.mount, schemas: plan.NewSchemas("#/components/schemas/")}
 	b.schemas.SetFailing(tagcheck.Failing(rs.api.Validator()))
 	b.schemas.Name(reflect.TypeFor[problem](), "Problem")
 	problemRef, err := b.schemas.Of(reflect.TypeFor[problem](), plan.Output)
 	if err != nil {
-		panic("rest: OpenAPI: " + err.Error()) // a bug: problem encodes
+		panic("rest: " + method + ": " + err.Error()) // a bug: problem encodes
 	}
 	b.problemRef = problemRef
 	b.problem = ordered[*mediaType]{{"application/problem+json", &mediaType{Schema: problemRef}}}
@@ -228,7 +248,7 @@ func openAPIOf(rs *Routes, info tyr.Info) *openAPIDoc {
 
 	defs, err := b.schemas.Defs()
 	if err != nil {
-		panic("rest: OpenAPI: " + err.Error())
+		panic("rest: " + method + ": " + err.Error())
 	}
 	for _, d := range defs {
 		doc.Components.Schemas = append(doc.Components.Schemas, jsonschema.Property{Name: d.Name, Schema: d.Schema})

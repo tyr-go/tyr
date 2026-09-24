@@ -75,8 +75,8 @@ type (
 
 // openRPCOf returns the OpenRPC document of the operations of api, as
 // Handler serves them, in JSON. It panics on a type of a request or a
-// result that JSON can't carry.
-func openRPCOf(api *tyr.API, info tyr.Info) jsontext.Value {
+// result that JSON can't carry; fn names the function in panics.
+func openRPCOf(api *tyr.API, info tyr.Info, fn string) jsontext.Value {
 	schemas := plan.NewSchemas("#/components/schemas/")
 	schemas.SetFailing(tagcheck.Failing(api.Validator()))
 	doc := &openRPCDoc{
@@ -87,20 +87,20 @@ func openRPCOf(api *tyr.API, info tyr.Info) jsontext.Value {
 	for op := range api.Operations() {
 		m, err := methodOf(op, schemas)
 		if err != nil {
-			panic(fmt.Sprintf("jsonrpc: Discover: operation %q: %v", op.Name(), err))
+			panic(fmt.Sprintf("jsonrpc: %s: operation %q: %v", fn, op.Name(), err))
 		}
 		doc.Methods = append(doc.Methods, m)
 	}
 	defs, err := schemas.Defs()
 	if err != nil {
-		panic("jsonrpc: Discover: " + err.Error())
+		panic("jsonrpc: " + fn + ": " + err.Error())
 	}
 	for _, d := range defs {
 		doc.Components.Schemas = append(doc.Components.Schemas, jsonschema.Property{Name: d.Name, Schema: d.Schema})
 	}
 	data, err := json.Marshal(doc)
 	if err != nil {
-		panic("jsonrpc: Discover: " + err.Error()) // a bug: every part encodes
+		panic("jsonrpc: " + fn + ": " + err.Error()) // a bug: every part encodes
 	}
 	return data
 }

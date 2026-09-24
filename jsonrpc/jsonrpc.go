@@ -96,6 +96,7 @@
 package jsonrpc
 
 import (
+	"encoding/json/jsontext"
 	"fmt"
 	"net/http"
 
@@ -169,17 +170,43 @@ func MaxBodyBytes(n int64) HandlerOption {
 //
 // The document is made once, by Handler, which panics on a type of a
 // request or a result with a field that JSON can't carry, such as a
-// time.Duration, and on two types of one schema name. rpc.discover isn't an operation: the interceptors don't
-// see it, and its params are ignored. A batch gets the document once: a
-// second rpc.discover in it gets -32600 Invalid Request, so that a small
-// request can't ask for many copies of it. Without Discover, it is a method
-// that doesn't exist, as any other name that starts with "rpc.". Discover
-// panics if info has no Title or Version.
+// time.Duration, and on two types of one schema name. rpc.discover isn't
+// an operation: the interceptors don't see it, and its params are ignored.
+// A batch gets the document once: a second rpc.discover in it gets -32600
+// Invalid Request, so that a small request can't ask for many copies of
+// it. Without Discover, it is a method that doesn't exist, as any other
+// name that starts with "rpc.". [OpenRPCJSON] returns the document without
+// a server. Discover panics if info has no Title or Version.
 func Discover(info tyr.Info) HandlerOption {
 	if info.Title == "" || info.Version == "" {
 		panic("jsonrpc: Discover: the Info needs a Title and a Version")
 	}
 	return func(c *config) { c.discover = &info }
+}
+
+// OpenRPCJSON returns the OpenRPC document of the operations of api as
+// JSON, with indents: the document that rpc.discover answers with
+// [Discover], for tools that need no server, such as the generation of
+// clients in CI:
+//
+//	err := os.WriteFile("openrpc.json", jsonrpc.OpenRPCJSON(api, info), 0o644)
+//
+// It seals api, as [Handler] does, so that an operation registered later
+// panics rather than go missing from the document. It panics if api is nil
+// or info has no Title or Version, and as Handler does with Discover.
+func OpenRPCJSON(api *tyr.API, info tyr.Info) []byte {
+	switch {
+	case api == nil:
+		panic("jsonrpc: OpenRPCJSON: nil API")
+	case info.Title == "" || info.Version == "":
+		panic("jsonrpc: OpenRPCJSON: the Info needs a Title and a Version")
+	}
+	api.Seal()
+	doc := openRPCOf(api, info, "OpenRPCJSON")
+	if err := doc.Indent(jsontext.WithIndent("  ")); err != nil {
+		panic("jsonrpc: OpenRPCJSON: " + err.Error()) // a bug: openRPCOf writes valid JSON
+	}
+	return doc
 }
 
 // Handler seals api and returns a handler that serves its operations over
@@ -202,7 +229,7 @@ func Handler(api *tyr.API, opts ...HandlerOption) http.Handler {
 		h.ops[op.Name()] = op
 	}
 	if h.discover != nil {
-		h.document = openRPCOf(api, *h.discover)
+		h.document = openRPCOf(api, *h.discover, "Discover")
 	}
 	return h
 }

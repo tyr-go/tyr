@@ -124,6 +124,25 @@ func TestDiscover(t *testing.T) {
 	}
 }
 
+func TestOpenRPCJSON(t *testing.T) {
+	// The document that rpc.discover answers with, indented.
+	info := tyr.Info{Title: "links", Version: "1.0.0", Description: "Short links."}
+	got := jsonrpc.OpenRPCJSON(docAPI(), info)
+	if want := discover(t, jsonrpc.Handler(docAPI(), jsonrpc.Discover(info))); string(got) != string(want) {
+		t.Errorf("OpenRPCJSON = %s, want what rpc.discover answers: %s", got, want)
+	}
+
+	// It seals the API: an operation registered later would be missing.
+	api := docAPI()
+	jsonrpc.OpenRPCJSON(api, info)
+	want := `tyr: Handle("links.late") after Seal: register everything before mounting the API`
+	if got := panicValue(func() {
+		api.Handle("links.late", func(ctx context.Context, req struct{}) (string, error) { return "", nil })
+	}); got != want {
+		t.Errorf("Handle after OpenRPCJSON panicked with %v, want %q", got, want)
+	}
+}
+
 func TestDiscoverOff(t *testing.T) {
 	// Without Discover, rpc.discover is a method that doesn't exist.
 	rec := post(jsonrpc.Handler(docAPI()), `{"jsonrpc":"2.0","method":"rpc.discover","id":1}`)
@@ -160,6 +179,34 @@ func TestDiscoverPanics(t *testing.T) {
 			jsonrpc.Handler(api, jsonrpc.Discover(info))
 		}, `jsonrpc: Discover: two types have the schema name "Inner": github.com/tyr-go/tyr/jsonrpc_test.Inner and ` +
 			`github.com/tyr-go/tyr/internal/plan/plantest.Inner; give one of them a method SchemaName() string`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := panicValue(tt.f); got != tt.want {
+				t.Errorf("panicked with %v, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOpenRPCJSONPanics(t *testing.T) {
+	info := tyr.Info{Title: "links", Version: "1.0.0"}
+	type waitReq struct {
+		For time.Duration `json:"for"`
+	}
+	tests := []struct {
+		name string
+		f    func()
+		want string
+	}{
+		{"nil API", func() { jsonrpc.OpenRPCJSON(nil, info) }, "jsonrpc: OpenRPCJSON: nil API"},
+		{"no title", func() { jsonrpc.OpenRPCJSON(newAPI(), tyr.Info{Version: "1.0.0"}) }, "jsonrpc: OpenRPCJSON: the Info needs a Title and a Version"},
+		{"no version", func() { jsonrpc.OpenRPCJSON(newAPI(), tyr.Info{Title: "links"}) }, "jsonrpc: OpenRPCJSON: the Info needs a Title and a Version"},
+		{"a field JSON can't carry", func() {
+			api := newAPI()
+			api.Handle("jobs.wait", func(ctx context.Context, req waitReq) (string, error) { return "", nil })
+			jsonrpc.OpenRPCJSON(api, info)
+		}, `jsonrpc: OpenRPCJSON: operation "jobs.wait": jsonrpc_test.waitReq.For: json/v2 has no representation of time.Duration`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

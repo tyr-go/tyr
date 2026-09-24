@@ -108,6 +108,16 @@ func TestOpenAPI(t *testing.T) {
 	golden(t, "openapi", rec.Body.Bytes())
 }
 
+func TestOpenAPIJSON(t *testing.T) {
+	// The bytes are those that the handler serves.
+	info := tyr.Info{Title: "links", Version: "1.0.0", Description: "Short links."}
+	routes := rest.Mount(http.NewServeMux(), docAPI(), rest.Challenge(`Bearer realm="links"`))
+	served := do(routes.OpenAPI(info), "GET", "/openapi.json", "", "").Body.Bytes()
+	if got := routes.OpenAPIJSON(info); string(got) != string(served) {
+		t.Errorf("OpenAPIJSON = %s, want what OpenAPI serves: %s", got, served)
+	}
+}
+
 // Types that the stable names of schemas are checked with.
 type (
 	stableAddress struct {
@@ -175,6 +185,18 @@ func TestOpenAPIPanics(t *testing.T) {
 	openAPI := func(api *tyr.API, info tyr.Info) func() {
 		return func() { rest.Mount(http.NewServeMux(), api).OpenAPI(info) }
 	}
+	openAPIJSON := func(api *tyr.API, info tyr.Info) func() {
+		return func() { rest.Mount(http.NewServeMux(), api).OpenAPIJSON(info) }
+	}
+	collision := func() *tyr.API {
+		type Inner struct {
+			Name string `json:"name"`
+		}
+		api := newAPI()
+		api.Handle("inner.ours", func(ctx context.Context, req struct{}) (Inner, error) { return Inner{}, nil }, rest.Route("GET /ours"))
+		api.Handle("inner.theirs", func(ctx context.Context, req struct{}) (plantest.Inner, error) { return plantest.Inner{}, nil }, rest.Route("GET /theirs"))
+		return api
+	}
 	tests := []struct {
 		name string
 		f    func()
@@ -201,16 +223,13 @@ func TestOpenAPIPanics(t *testing.T) {
 			api.Handle("jobs.wait", func(ctx context.Context, req waitReq) (string, error) { return "", nil }, rest.Route("POST /wait"))
 			openAPI(api, info)()
 		}, `rest: operation "jobs.wait": rest_test.waitReq.For: json/v2 has no representation of time.Duration`},
-		{"two types of one schema name", func() {
-			type Inner struct {
-				Name string `json:"name"`
-			}
-			api := newAPI()
-			api.Handle("inner.ours", func(ctx context.Context, req struct{}) (Inner, error) { return Inner{}, nil }, rest.Route("GET /ours"))
-			api.Handle("inner.theirs", func(ctx context.Context, req struct{}) (plantest.Inner, error) { return plantest.Inner{}, nil }, rest.Route("GET /theirs"))
-			openAPI(api, info)()
-		}, `rest: OpenAPI: two types have the schema name "Inner": github.com/tyr-go/tyr/rest_test.Inner and ` +
-			`github.com/tyr-go/tyr/internal/plan/plantest.Inner; give one of them a method SchemaName() string`},
+		{"two types of one schema name", openAPI(collision(), info),
+			`rest: OpenAPI: two types have the schema name "Inner": github.com/tyr-go/tyr/rest_test.Inner and ` +
+				`github.com/tyr-go/tyr/internal/plan/plantest.Inner; give one of them a method SchemaName() string`},
+		{"OpenAPIJSON: no title", openAPIJSON(newAPI(), tyr.Info{Version: "1.0.0"}), "rest: OpenAPIJSON: the Info needs a Title and a Version"},
+		{"OpenAPIJSON: two types of one schema name", openAPIJSON(collision(), info),
+			`rest: OpenAPIJSON: two types have the schema name "Inner": github.com/tyr-go/tyr/rest_test.Inner and ` +
+				`github.com/tyr-go/tyr/internal/plan/plantest.Inner; give one of them a method SchemaName() string`},
 		{"the name of the problems", func() {
 			type Problem struct {
 				Title string `json:"title"`
