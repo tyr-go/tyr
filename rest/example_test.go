@@ -2,9 +2,12 @@ package rest_test
 
 import (
 	"context"
+	"encoding/json/v2"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 
 	"github.com/tyr-go/tyr"
@@ -97,4 +100,45 @@ func ExampleStatus() {
 	// 201 Location: /links/golang
 	// {"code":"golang","url":"https://go.dev"}
 	// 302 Location: https://go.dev
+}
+
+func ExampleOpenAPI() {
+	type GetLinkReq struct {
+		Code string `json:"code" path:"code" validate:"required" doc:"The code of the link."`
+	}
+	type Link struct {
+		Code string `json:"code"`
+		URL  string `json:"url"`
+	}
+
+	api := tyr.New()
+	api.Implement(tyr.Define[GetLinkReq, Link]("links.get", rest.Route("GET /links/{code}"),
+		tyr.Summary("Get a link"), tyr.Errors(tyr.KindNotFound),
+	), func(ctx context.Context, req GetLinkReq) (Link, error) {
+		return Link{Code: req.Code, URL: "https://go.dev"}, nil
+	})
+
+	mux := http.NewServeMux()
+	rest.Mount(mux, api)
+	mux.Handle("GET /openapi.json", rest.OpenAPI(api, tyr.Info{Title: "links", Version: "1.0.0"}))
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/openapi.json", nil))
+	var doc struct {
+		Paths map[string]map[string]struct {
+			OperationID string         `json:"operationId"`
+			Summary     string         `json:"summary"`
+			Responses   map[string]any `json:"responses"`
+		} `json:"paths"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+		fmt.Println(err)
+	}
+	for path, item := range doc.Paths {
+		for method, op := range item {
+			fmt.Println(method, path, op.OperationID, op.Summary, slices.Sorted(maps.Keys(op.Responses)))
+		}
+	}
+	// Output:
+	// get /links/{code} links.get Get a link [200 400 404 default]
 }

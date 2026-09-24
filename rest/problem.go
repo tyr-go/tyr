@@ -14,14 +14,15 @@ import (
 )
 
 // problem is a problem details object of RFC 9457 with the members of tyr.
+// Its doc tags describe it in the OpenAPI document.
 type problem struct {
-	Type    string         `json:"type"`
-	Title   string         `json:"title"`
-	Status  int            `json:"status"`
-	Detail  string         `json:"detail,omitempty"`
-	Kind    string         `json:"kind,omitempty"`
-	Errors  tyr.Violations `json:"errors,omitempty"`
-	Details any            `json:"details,omitempty"`
+	Type    string         `json:"type" doc:"The URI of the problem type: one per kind, or about:blank for a problem of the HTTP request itself."`
+	Title   string         `json:"title" doc:"The title of the problem type."`
+	Status  int            `json:"status" doc:"The HTTP status."`
+	Detail  string         `json:"detail,omitempty" doc:"The message of the error."`
+	Kind    string         `json:"kind,omitempty" doc:"The kind of the error. A problem of the HTTP request itself has none."`
+	Errors  tyr.Violations `json:"errors,omitempty" doc:"The fields that failed validation, with invalid_argument."`
+	Details any            `json:"details,omitempty" doc:"The details of an error of another kind."`
 }
 
 // blank returns the problem of an HTTP request itself, of status, with

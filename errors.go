@@ -293,9 +293,9 @@ type Violation struct {
 	// Pointer is a JSON Pointer (RFC 6901) to the field in the JSON form of
 	// the request, such as "/code". It uses the plain string representation,
 	// not the "#/code" URI fragment form.
-	Pointer string `json:"pointer"`
+	Pointer string `json:"pointer" doc:"A JSON Pointer to the field in the JSON form of the request, such as /code."`
 	// Detail says what's wrong with the field; it's sent to clients.
-	Detail string `json:"detail"`
+	Detail string `json:"detail" doc:"What's wrong with the field."`
 }
 
 // Violations collects fields that failed validation. The zero value is

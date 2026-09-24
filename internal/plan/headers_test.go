@@ -298,3 +298,27 @@ func TestBindHeaderTime(t *testing.T) {
 		t.Errorf("HTTP date in the query: problems %q, want one about RFC 3339", problems)
 	}
 }
+
+func TestHeadersFields(t *testing.T) {
+	type base struct {
+		ETag string `header:"etag"`
+	}
+	type res struct {
+		base
+		Location *string   `json:"-" header:"Location"`
+		Modified time.Time `json:"modified" header:"Last-Modified"`
+		Plain    string    `json:"plain"`
+	}
+	h, err := plan.NewHeaders(reflect.TypeFor[*res]())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []plan.HeaderField{
+		{Name: "Etag", Index: []int{0, 0}, Type: reflect.TypeFor[string]()},
+		{Name: "Location", Index: []int{1}, Type: reflect.TypeFor[*string]()},
+		{Name: "Last-Modified", Index: []int{2}, Type: reflect.TypeFor[time.Time]()},
+	}
+	if got := h.Fields(); !reflect.DeepEqual(got, want) {
+		t.Errorf("Fields() = %+v, want %+v", got, want)
+	}
+}

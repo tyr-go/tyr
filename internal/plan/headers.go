@@ -22,7 +22,24 @@ type headerField struct {
 	name   string // canonical
 	goName string // with the embedded structs on the way
 	index  []int
+	typ    reflect.Type
 	format func(v reflect.Value) (string, error) // "" sets no header
+}
+
+// HeaderField is a field of a result that sets a header.
+type HeaderField struct {
+	Name  string       // of the header, canonical
+	Index []int        // of the field, through embedded structs
+	Type  reflect.Type // of the field
+}
+
+// Fields returns the fields that set headers, in the order of the struct.
+func (h *Headers) Fields() []HeaderField {
+	out := make([]HeaderField, len(h.fields))
+	for i, f := range h.fields {
+		out[i] = HeaderField{Name: f.name, Index: f.index, Type: f.typ}
+	}
+	return out
 }
 
 // NewHeaders returns the headers of results of type t. A field of a struct
@@ -78,7 +95,7 @@ func NewHeaders(t reflect.Type) (*Headers, error) {
 		if format == nil {
 			return nil, fmt.Errorf("field %s has %s, but its type %v can't set a header", tf.name, tag, f.Type)
 		}
-		h.fields = append(h.fields, headerField{name: name, goName: tf.name, index: tf.index, format: format})
+		h.fields = append(h.fields, headerField{name: name, goName: tf.name, index: tf.index, typ: f.Type, format: format})
 	}
 	return h, nil
 }

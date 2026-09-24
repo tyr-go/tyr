@@ -1,0 +1,756 @@
+{
+  "openapi": "3.1.2",
+  "info": {
+    "title": "links",
+    "description": "Short links.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/links": {
+      "get": {
+        "tags": [
+          "links"
+        ],
+        "operationId": "links.list",
+        "parameters": [
+          {
+            "name": "tag",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 3
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "How many links to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Modified-Since",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/docLink"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Argument",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error of another kind, or a problem of the HTTP request itself.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "links"
+        ],
+        "summary": "Create a link",
+        "description": "Without a code, the link gets a random one.",
+        "operationId": "links.create",
+        "parameters": [
+          {
+            "name": "X-Tenant",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "examples": {
+              "with a code": {
+                "value": "acme"
+              }
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "Where the link leads.",
+                    "minLength": 1,
+                    "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://[^/?#]"
+                  },
+                  "code": {
+                    "type": "string",
+                    "minLength": 4,
+                    "maxLength": 16
+                  }
+                },
+                "required": [
+                  "url"
+                ]
+              },
+              "examples": {
+                "with a code": {
+                  "value": {
+                    "url": "https://go.dev",
+                    "code": "go-home"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "headers": {
+              "Location": {
+                "description": "The path of the link.",
+                "schema": {
+                  "type": "string"
+                },
+                "examples": {
+                  "with a code": {
+                    "value": "/links/go-home"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/docCreated"
+                },
+                "examples": {
+                  "with a code": {
+                    "value": {
+                      "code": "go-home",
+                      "url": "https://go.dev",
+                      "created_at": "2026-09-24T00:00:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Argument",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already Exists or Failed Precondition",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error of another kind, or a problem of the HTTP request itself.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/links/{code}": {
+      "get": {
+        "tags": [
+          "links"
+        ],
+        "operationId": "links.get",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "examples": {
+              "go-home": {
+                "value": "go-home"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/docLink"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "examples": {
+                  "go-home": {
+                    "value": {
+                      "code": "go-home",
+                      "url": "https://go.dev",
+                      "created_at": "2026-09-24T00:00:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Argument",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error of another kind, or a problem of the HTTP request itself.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "links.delete",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Invalid Argument",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge per scheme that the server accepts.",
+                "schema": {
+                  "type": "string"
+                },
+                "examples": {
+                  "1": {
+                    "value": "Bearer realm=\"links\""
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission Denied",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error of another kind, or a problem of the HTTP request itself.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "deprecated": true
+      }
+    },
+    "/{code}": {
+      "get": {
+        "operationId": "links.follow",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "examples": {
+              "go-home": {
+                "value": "go-home"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Found",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "examples": {
+                  "go-home": {
+                    "value": "https://go.dev"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Argument",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error of another kind, or a problem of the HTTP request itself.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/links/import": {
+      "post": {
+        "operationId": "links.import",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/docImportReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/docImported"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Argument",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error of another kind, or a problem of the HTTP request itself.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/files/{path}": {
+      "get": {
+        "operationId": "files.get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Argument",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error of another kind, or a problem of the HTTP request itself.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "operationId": "home.get",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Argument",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error of another kind, or a problem of the HTTP request itself.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/status": {
+      "get": {
+        "operationId": "status.get",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Argument",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error of another kind, or a problem of the HTTP request itself.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "servers": [
+          {
+            "url": "//status.example.com"
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Problem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri",
+            "description": "The URI of the problem type: one per kind, or about:blank for a problem of the HTTP request itself."
+          },
+          "title": {
+            "type": "string",
+            "description": "The title of the problem type."
+          },
+          "status": {
+            "type": "integer",
+            "description": "The HTTP status."
+          },
+          "detail": {
+            "type": "string",
+            "description": "The message of the error."
+          },
+          "kind": {
+            "type": "string",
+            "description": "The kind of the error. A problem of the HTTP request itself has none.",
+            "enum": [
+              "internal",
+              "invalid_argument",
+              "unauthenticated",
+              "permission_denied",
+              "not_found",
+              "already_exists",
+              "failed_precondition",
+              "resource_exhausted",
+              "deadline_exceeded",
+              "unavailable",
+              "canceled"
+            ]
+          },
+          "errors": {
+            "type": "array",
+            "description": "The fields that failed validation, with invalid_argument.",
+            "items": {
+              "$ref": "#/components/schemas/Violation"
+            }
+          },
+          "details": {
+            "description": "The details of an error of another kind."
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status"
+        ]
+      },
+      "Violation": {
+        "type": "object",
+        "properties": {
+          "pointer": {
+            "type": "string",
+            "description": "A JSON Pointer to the field in the JSON form of the request, such as /code."
+          },
+          "detail": {
+            "type": "string",
+            "description": "What's wrong with the field."
+          }
+        },
+        "required": [
+          "pointer",
+          "detail"
+        ]
+      },
+      "docCreated": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "The code of the link."
+          },
+          "url": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "code",
+          "url",
+          "created_at"
+        ]
+      },
+      "docImportReq": {
+        "type": "object",
+        "properties": {
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/docLinkInput"
+            },
+            "maxItems": 10
+          }
+        },
+        "required": [
+          "links"
+        ]
+      },
+      "docImported": {
+        "type": "object",
+        "properties": {
+          "imported": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "imported"
+        ]
+      },
+      "docLink": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "The code of the link."
+          },
+          "url": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "code",
+          "url",
+          "created_at"
+        ]
+      },
+      "docLinkInput": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "The code of the link."
+          },
+          "url": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  }
+}
