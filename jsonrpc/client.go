@@ -32,9 +32,9 @@ import (
 //
 // A [*ServerError] from [Client.Call] is what the server answered; any
 // other error means that no answer came that fits the call. Headers of
-// one's own, such as Authorization, go through the Transport of the
-// http.Client, as with golang.org/x/oauth2. A Client is safe for concurrent
-// use.
+// one's own, such as Authorization, come from the option [Headers], for
+// each call with its context, or from the Transport of the http.Client, as
+// with golang.org/x/oauth2. A Client is safe for concurrent use.
 //
 // A generic method can't be in an interface, so code that calls a service
 // declares the small interface it needs, over a Client, and its tests run
@@ -105,9 +105,10 @@ import (
 // NewClient keeps the Transport of the client it copies.
 type Client struct {
 	endpoint string
-	hc       *http.Client  // a copy of that of NewClient, which doesn't follow redirects
-	limit    int64         // of the body of a response
-	ids      atomic.Uint64 // the last id of a call
+	hc       *http.Client                                     // a copy of that of NewClient, which doesn't follow redirects
+	limit    int64                                            // of the body of a response
+	headers  []func(ctx context.Context, h http.Header) error // of Headers, in their order
+	ids      atomic.Uint64                                    // the last id of a call
 }
 
 // defaultMaxResponse is the size limit of responses without
@@ -127,6 +128,46 @@ func MaxResponseBytes(n int64) ClientOption {
 		panic(fmt.Sprintf("jsonrpc: MaxResponseBytes(%d): want a positive size", n))
 	}
 	return func(c *Client) { c.limit = n }
+}
+
+// Headers returns an option that sets headers of each request of the
+// client: fn gets the context of the call and the headers of its request,
+// and may set, add or delete any but those that the client sets after it:
+// Content-Type and Accept, which the protocol needs, and X-Request-ID when
+// the context carries a request ID. The functions of several Headers run
+// in their order. A token of the service, from a source that refreshes it:
+//
+//	links := jsonrpc.NewClient(url, hc, jsonrpc.Headers(func(ctx context.Context, h http.Header) error {
+//		token, err := tokens.Token(ctx)
+//		if err != nil {
+//			return err
+//		}
+//		h.Set("Authorization", "Bearer "+token)
+//		return nil
+//	}))
+//
+// The token of the user who called, which the middleware of the service put
+// into the context, passed on:
+//
+//	jsonrpc.Headers(func(ctx context.Context, h http.Header) error {
+//		if token, ok := userToken(ctx); ok {
+//			h.Set("Authorization", "Bearer "+token)
+//		}
+//		return nil
+//	})
+//
+// A token passed on gives the other service the authority of its user:
+// pass it only to a service that is meant to take the tokens of your users.
+// The headers go to the endpoint only, as the client follows no redirects.
+//
+// An error of fn fails the call before its request is sent; [Client.Call]
+// returns it wrapped, as jsonrpc: <method>: headers: <error>, where
+// [errors.Is] and [errors.AsType] find it. Headers panics if fn is nil.
+func Headers(fn func(ctx context.Context, h http.Header) error) ClientOption {
+	if fn == nil {
+		panic("jsonrpc: Headers: nil function")
+	}
+	return func(c *Client) { c.headers = append(c.headers, fn) }
 }
 
 // NewClient returns a client that sends calls to endpoint, an absolute
@@ -219,6 +260,11 @@ func (c *Client) Call[Req, Res any](ctx context.Context, contract tyr.Contract[R
 	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
 	if err != nil {
 		return res, fmt.Errorf("jsonrpc: %s: %w", name, err)
+	}
+	for _, fn := range c.headers {
+		if err := fn(ctx, hreq.Header); err != nil {
+			return res, fmt.Errorf("jsonrpc: %s: headers: %w", name, err)
+		}
 	}
 	hreq.Header.Set("Content-Type", "application/json")
 	hreq.Header.Set("Accept", "application/json")

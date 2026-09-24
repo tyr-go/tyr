@@ -859,3 +859,87 @@ func TestMapErrorRecipe(t *testing.T) {
 		}
 	})
 }
+
+// tokenKey is a key of the context of a call, for TestHeaders.
+type tokenKey struct{}
+
+func TestHeaders(t *testing.T) {
+	type sent struct {
+		authorization, contentType, accept string
+		tenant, requestID                  []string
+	}
+	requests := make(chan sent, 2)
+	c := jsonrpc.NewClient("http://example.com/rpc", httptest.NewTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- sent{r.Header.Get("Authorization"), r.Header.Get("Content-Type"), r.Header.Get("Accept"),
+			r.Header.Values("X-Tenant"), r.Header.Values("X-Request-ID")}
+		var req struct {
+			ID jsontext.Value `json:"id"`
+		}
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &req)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","result":{},"id":`+string(req.ID)+`}`)
+	})).Client(),
+		// The token of the context of the call, and headers that the
+		// client sets itself, which it keeps.
+		jsonrpc.Headers(func(ctx context.Context, h http.Header) error {
+			if token, ok := ctx.Value(tokenKey{}).(string); ok {
+				h.Set("Authorization", "Bearer "+token)
+			}
+			h.Set("Content-Type", "text/plain")
+			h.Set("Accept", "text/html")
+			h.Set("X-Request-ID", "from-headers")
+			h.Set("X-Tenant", "acme")
+			return nil
+		}),
+		// The functions run in their order.
+		jsonrpc.Headers(func(ctx context.Context, h http.Header) error {
+			h.Add("X-Tenant", "globex")
+			return nil
+		}),
+	)
+
+	ctx := context.WithValue(t.Context(), tokenKey{}, "alice")
+	for _, ctx := range []context.Context{ctx, tyr.WithRequestID(ctx, "req-1")} {
+		if _, err := c.Call(ctx, echoOp, thing{Code: "go"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	close(requests)
+	want := []sent{
+		{"Bearer alice", "application/json", "application/json", []string{"acme", "globex"}, []string{"from-headers"}},
+		{"Bearer alice", "application/json", "application/json", []string{"acme", "globex"}, []string{"req-1"}},
+	}
+	i := 0
+	for got := range requests {
+		if w := want[i]; got.authorization != w.authorization || got.contentType != w.contentType || got.accept != w.accept ||
+			!slices.Equal(got.tenant, w.tenant) || !slices.Equal(got.requestID, w.requestID) {
+			t.Errorf("request %d = %+v, want %+v", i, got, w)
+		}
+		i++
+	}
+}
+
+func TestHeadersError(t *testing.T) {
+	// An error of the headers fails the call, and nothing is sent.
+	var sent atomic.Bool
+	errNoToken := errors.New("no token")
+	c := jsonrpc.NewClient("http://example.com/rpc", httptest.NewTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sent.Store(true)
+	})).Client(), jsonrpc.Headers(func(ctx context.Context, h http.Header) error { return errNoToken }))
+
+	_, err := c.Call(t.Context(), echoOp, thing{Code: "go"})
+	if !errors.Is(err, errNoToken) || err.Error() != "jsonrpc: things.echo: headers: no token" || sent.Load() {
+		t.Errorf("Call() error = %v, sent %v; want jsonrpc: things.echo: headers: no token, nothing sent", err, sent.Load())
+	}
+	if _, ok := errors.AsType[*jsonrpc.ServerError](err); ok {
+		t.Errorf("Call() error = %v, want no ServerError: the server answered nothing", err)
+	}
+
+	defer func() {
+		if got := recover(); got != "jsonrpc: Headers: nil function" {
+			t.Errorf("Headers(nil) panicked with %v", got)
+		}
+	}()
+	jsonrpc.Headers(nil)
+}

@@ -143,3 +143,34 @@ func ExampleHandler() {
 	// 200 {"jsonrpc":"2.0","error":{"code":404,"message":"link \"gone\" not found","data":{"kind":"not_found"}},"id":2}
 	// 200 [{"jsonrpc":"2.0","error":{"code":-32602,"message":"validation failed","data":{"kind":"invalid_argument","details":[{"pointer":"/code","detail":"is required"}]}},"id":3},{"jsonrpc":"2.0","error":{"code":-32601,"message":"Method not found"},"id":4}]
 }
+
+// authorizationKey is where the service of ExampleHeaders keeps the
+// Authorization of a request.
+type authorizationKey struct{}
+
+func ExampleHeaders() {
+	// A service that answers who called it, by the Authorization of the
+	// request, which its middleware puts into the context.
+	api := tyr.New()
+	whoami := tyr.Define[struct{}, string]("whoami")
+	api.Implement(whoami, func(ctx context.Context, _ struct{}) (string, error) {
+		auth, _ := ctx.Value(authorizationKey{}).(string)
+		return auth, nil
+	})
+	rpc := jsonrpc.Handler(api)
+	service := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), authorizationKey{}, r.Header.Get("Authorization"))
+		rpc.ServeHTTP(w, r.WithContext(ctx))
+	})
+
+	// The client sends the token of its service with each call.
+	c := jsonrpc.NewClient("http://whoami/rpc", inprocess.Client(service),
+		jsonrpc.Headers(func(ctx context.Context, h http.Header) error {
+			h.Set("Authorization", "Bearer service-token")
+			return nil
+		}))
+	got, err := c.Call(context.Background(), whoami, struct{}{})
+	fmt.Println(got, err)
+	// Output:
+	// Bearer service-token <nil>
+}
