@@ -208,13 +208,6 @@ func TestCreateInvalid(t *testing.T) {
 			want:   violation("/code", "only a-z, 0-9 and '-'"),
 		},
 		{
-			// The short link /readyz would be the probe.
-			name:   "code of a probe",
-			body:   `{"url":"https://go.dev","code":"readyz"}`,
-			status: http.StatusBadRequest,
-			want:   violation("/code", "is taken by the service"),
-		},
-		{
 			name:   "broken JSON",
 			body:   `{"url":}`,
 			status: http.StatusBadRequest,
@@ -292,7 +285,7 @@ func TestProbes(t *testing.T) {
 	// no request ID, and the access log has none of their records.
 	synctest.Test(t, func(t *testing.T) {
 		s := start(t)
-		for _, path := range []string{"/livez", "/readyz"} {
+		for _, path := range []string{"/health/live", "/health/ready"} {
 			resp, body := s.do(t, "GET", path, "")
 			if resp.StatusCode != http.StatusOK || body != `{"status":"ok"}` || resp.Header.Get("X-Request-ID") != "" {
 				t.Errorf("GET %s = %d %v %s, want 200 {\"status\":\"ok\"} without a request ID", path, resp.StatusCode, resp.Header, body)
@@ -303,12 +296,12 @@ func TestProbes(t *testing.T) {
 			t.Errorf("logged %+v, want nothing", got)
 		}
 
-		// Another method goes through the middleware to the mux, where the
-		// path is that of a short link, which only GET follows.
-		resp, body := s.do(t, "POST", "/readyz", "")
-		const notAllowed = `{"type":"about:blank","title":"Method Not Allowed","status":405}`
-		if resp.StatusCode != http.StatusMethodNotAllowed || body != notAllowed || resp.Header.Get("X-Request-ID") == "" {
-			t.Errorf("POST /readyz = %d %v %s, want 405 %s with a request ID", resp.StatusCode, resp.Header, body, notAllowed)
+		// Another method goes through the middleware to the mux, which has
+		// no route for the path: a short link has one segment.
+		resp, body := s.do(t, "POST", "/health/ready", "")
+		const notFound = `{"type":"about:blank","title":"Not Found","status":404}`
+		if resp.StatusCode != http.StatusNotFound || body != notFound || resp.Header.Get("X-Request-ID") == "" {
+			t.Errorf("POST /health/ready = %d %v %s, want 404 %s with a request ID", resp.StatusCode, resp.Header, body, notFound)
 		}
 	})
 }
@@ -615,7 +608,7 @@ func TestDrain(t *testing.T) {
 			_ = resp.Body.Close()
 			return resp.StatusCode, resp.Close
 		}
-		if status, closed := send("GET", "/readyz", ""); status != http.StatusOK || closed {
+		if status, closed := send("GET", "/health/ready", ""); status != http.StatusOK || closed {
 			t.Errorf("readiness = %d, closed %v; want 200 on a connection kept alive", status, closed)
 		}
 
@@ -624,10 +617,10 @@ func TestDrain(t *testing.T) {
 		start := time.Now()
 		for _, at := range []time.Duration{0, 4 * time.Second} {
 			time.Sleep(at - time.Since(start))
-			if status, _ := send("GET", "/readyz", ""); status != http.StatusServiceUnavailable {
+			if status, _ := send("GET", "/health/ready", ""); status != http.StatusServiceUnavailable {
 				t.Errorf("readiness %v into the drain = %d, want 503", at, status)
 			}
-			if status, _ := send("GET", "/livez", ""); status != http.StatusOK {
+			if status, _ := send("GET", "/health/live", ""); status != http.StatusOK {
 				t.Errorf("liveness %v into the drain = %d, want 200", at, status)
 			}
 			if status, closed := send("POST", "/links", `{"url":"https://go.dev"}`); status != http.StatusCreated || !closed {
@@ -641,7 +634,7 @@ func TestDrain(t *testing.T) {
 		if took := time.Since(start); took != 5*time.Second {
 			t.Errorf("serve() returned %v after the signal, want 5s", took)
 		}
-		if status, _ := send("GET", "/livez", ""); status != 0 {
+		if status, _ := send("GET", "/health/live", ""); status != 0 {
 			t.Errorf("after the shutdown, liveness = %d, want no connection", status)
 		}
 	})

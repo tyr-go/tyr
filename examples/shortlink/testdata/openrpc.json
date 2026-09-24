@@ -30,7 +30,7 @@
         },
         {
           "name": "code",
-          "description": "The code of the link, of a-z, 0-9 and '-', other than livez and readyz, the paths of the probes of the service. Without it, the link gets a random one.",
+          "description": "The code of the link, of a-z, 0-9 and '-'. Without it, the link gets a random one.",
           "schema": {
             "type": "string",
             "minLength": 4,

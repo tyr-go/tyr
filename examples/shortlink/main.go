@@ -19,8 +19,8 @@
 // Load balancers probe it past its middleware, and when it's told to
 // stop, readiness fails while it serves on for a while (see -drain):
 //
-//	curl localhost:8080/livez
-//	curl localhost:8080/readyz
+//	curl localhost:8080/health/live
+//	curl localhost:8080/health/ready
 package main
 
 import (
@@ -154,10 +154,11 @@ func newServer(addr string, api *tyr.API, callers map[string]authz.Caller, origi
 	}))
 
 	// The probes go past the middleware: the balancers call them every few
-	// seconds, and the access log would drown in their records.
+	// seconds, and the access log would drown in their records. Their
+	// paths have two segments, which GET /{code} never takes.
 	root := http.NewServeMux()
-	root.Handle("GET /livez", health.Live())
-	root.Handle("GET /readyz", ready)
+	root.Handle("GET /health/live", health.Live())
+	root.Handle("GET /health/ready", ready)
 	// The 404 and 405 of the mux are problems, as the errors of operations
 	// are.
 	root.Handle("/", middleware.Chain(rest.ProblemHandler(mux), // first = outermost
