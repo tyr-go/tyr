@@ -101,8 +101,16 @@ func (c CORS) Handler(next http.Handler) http.Handler {
 // trusts the origins of the policy. Without that, it would reject the
 // requests that the policy lets their pages make, such as a POST with
 // JSON: it rejects every cross-site request whose method isn't safe. Pages
-// of other origins still get 403. Configure the rest of it as usual, such
-// as its deny handler.
+// of other origins still get 403. Configure the rest of it as usual. Its
+// deny handler answers in plain text; in front of the operations of rest,
+// set one that answers with a kind, as the operations do, since the
+// document of rest promises one with the statuses that an operation
+// declares (see [github.com/tyr-go/tyr/rest.Routes.WriteError]):
+//
+//	csrf := cors.CrossOriginProtection()
+//	csrf.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+//		routes.WriteError(w, r, tyr.PermissionDenied("cross-origin request"))
+//	}))
 //
 // It panics if the policy is invalid, as Handler does, or if its origins
 // are "*": the protection can't trust every origin. A service open to any

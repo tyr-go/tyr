@@ -267,15 +267,21 @@ func TestCrossOrigin(t *testing.T) {
 			t.Errorf("create from the app = %d %v %s, want 201 that the app may read", resp.StatusCode, h, body)
 		}
 
-		// A page of another site may do neither.
+		// A page of another site may do neither. CORS answers a preflight,
+		// which no operation has, with a problem of HTTP; CSRF protection
+		// denies a request of an operation with a kind, as the operations
+		// do.
 		const forbidden = `{"type":"about:blank","title":"Forbidden","status":403}`
 		resp, body = s.do(t, "OPTIONS", "/links", "", "Origin", "https://evil.example", "Access-Control-Request-Method", "POST")
 		if resp.StatusCode != http.StatusForbidden || body != forbidden || resp.Header.Get("Access-Control-Allow-Origin") != "" {
 			t.Errorf("preflight from another site = %d %v %s, want 403 %s", resp.StatusCode, resp.Header, body, forbidden)
 		}
-		resp, body = s.do(t, "POST", "/links", `{"url":"https://evil.example"}`, "Origin", "https://evil.example", "Sec-Fetch-Site", "cross-site")
-		if resp.StatusCode != http.StatusForbidden || body != forbidden || resp.Header.Get("Access-Control-Allow-Origin") != "" {
-			t.Errorf("create from another site = %d %v %s, want 403 %s", resp.StatusCode, resp.Header, body, forbidden)
+		const denied = `{"type":"/problems/permission_denied","title":"Permission Denied","status":403,"detail":"cross-origin request","kind":"permission_denied"}`
+		for _, target := range []string{"/links", "/rpc"} {
+			resp, body = s.do(t, "POST", target, `{"url":"https://evil.example"}`, "Origin", "https://evil.example", "Sec-Fetch-Site", "cross-site")
+			if resp.StatusCode != http.StatusForbidden || body != denied || resp.Header.Get("Access-Control-Allow-Origin") != "" {
+				t.Errorf("POST %s from another site = %d %v %s, want 403 %s", target, resp.StatusCode, resp.Header, body, denied)
+			}
 		}
 	})
 }

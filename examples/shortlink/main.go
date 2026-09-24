@@ -147,10 +147,11 @@ func newServer(addr string, api *tyr.API, callers map[string]authz.Caller, origi
 		MaxAge: time.Hour,
 	}
 	// It trusts the origins of CORS, whose requests it would reject
-	// otherwise.
+	// otherwise. It denies with a kind, as the operations do: the document
+	// promises their clients one with a 403.
 	csrf := cors.CrossOriginProtection()
 	csrf.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rest.WriteProblem(w, http.StatusForbidden)
+		routes.WriteError(w, r, tyr.PermissionDenied("cross-origin request"))
 	}))
 
 	// The probes go past the middleware: the balancers call them every few
