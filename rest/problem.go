@@ -56,6 +56,13 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 // handlers outside operations; otherwise it is the function [WriteError],
 // but that it logs an internal error with [tyr.API.Logger]. WriteError
 // panics if err is nil.
+//
+// Middleware that answers a request of an operation with a status that the
+// operation declares must answer with WriteError and a kind, such as a
+// protection against cross-site requests with a 403 of permission_denied:
+// the document of [Routes.OpenAPI] promises the kinds of the status to the
+// clients generated from it, and a problem without a kind, as
+// [WriteProblem] writes, would make that schema lie.
 func (rs *Routes) WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	writeErrorOf(w, r, err, rs.mount, rs.api.Logger(), "Routes.WriteError")
 }
@@ -91,8 +98,10 @@ func writeErrorOf(w http.ResponseWriter, r *http.Request, err error, m *mount, l
 // WriteProblem writes a problem of the HTTP request itself, as
 // application/problem+json without a kind, like the 413 and 415 of
 // [Mount]: {"type":"about:blank","title":"Forbidden","status":403}. Its
-// type, about:blank, means nothing beyond the status. WriteProblem panics
-// unless status is a 4xx or 5xx one.
+// type, about:blank, means nothing beyond the status. It fits a status that
+// no operation declares; for one that an operation declares, use
+// [Routes.WriteError] with a kind. WriteProblem panics unless status is a
+// 4xx or 5xx one.
 func WriteProblem(w http.ResponseWriter, status int) {
 	if status < 400 || status > 599 {
 		panic(fmt.Sprintf("rest: WriteProblem(%d): want a 4xx or 5xx status", status))

@@ -276,3 +276,50 @@ func TestOpenAPIWithValidator(t *testing.T) {
 		t.Errorf("the body = %s, want %s", compacted, want)
 	}
 }
+
+func TestOpenAPITypedErrors(t *testing.T) {
+	// The schema of an error of a status has its kinds and their types, as
+	// constants or enums, with the types of ProblemTypes; default has none.
+	api := newAPI()
+	api.Handle("links.create", func(ctx context.Context, req docCreateReq) (struct{}, error) { return struct{}{}, nil },
+		rest.Route("POST /links"), tyr.Errors(tyr.KindAlreadyExists, tyr.KindFailedPrecondition, tyr.KindUnauthenticated))
+	routes := rest.Mount(http.NewServeMux(), api, rest.ProblemTypes("https://example.com/problems/"), rest.Challenge(`Bearer realm="links"`))
+	rec := do(routes.OpenAPI(tyr.Info{Title: "links", Version: "1.0.0"}), "GET", "/openapi.json", "", "")
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Responses map[string]struct {
+				Headers map[string]jsontext.Value `json:"headers"`
+				Content map[string]struct {
+					Schema jsontext.Value `json:"schema"`
+				} `json:"content"`
+			} `json:"responses"`
+		} `json:"paths"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	responses := doc.Paths["/links"]["post"].Responses
+	schema := func(status string) string {
+		s, _ := jsontext.AppendFormat(nil, responses[status].Content["application/problem+json"].Schema)
+		return string(s)
+	}
+	typed := func(typ, kind string) string {
+		return `{"allOf":[{"$ref":"#/components/schemas/Problem"},{"type":"object","properties":{"type":` + typ +
+			`,"kind":` + kind + `},"required":["type","kind"]}]}`
+	}
+	tests := []struct{ status, want string }{
+		{"400", typed(`{"const":"https://example.com/problems/invalid_argument"}`, `{"const":"invalid_argument"}`)},
+		{"401", typed(`{"const":"https://example.com/problems/unauthenticated"}`, `{"const":"unauthenticated"}`)},
+		{"409", typed(`{"enum":["https://example.com/problems/already_exists","https://example.com/problems/failed_precondition"]}`,
+			`{"enum":["already_exists","failed_precondition"]}`)},
+		{"default", `{"$ref":"#/components/schemas/Problem"}`},
+	}
+	for _, tt := range tests {
+		if got := schema(tt.status); got != tt.want {
+			t.Errorf("%s:\n%s\nwant\n%s", tt.status, got, tt.want)
+		}
+	}
+	if _, ok := responses["401"].Headers["WWW-Authenticate"]; !ok {
+		t.Error("401 lost its WWW-Authenticate")
+	}
+}

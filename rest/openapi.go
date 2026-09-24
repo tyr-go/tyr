@@ -30,8 +30,14 @@ import (
 // whose schema is part of the operation, and the fields of its result
 // tagged header the headers of its success. Its
 // errors are invalid_argument, which any request may get, and the kinds of
-// [tyr.Errors], as application/problem+json, by status; default stands for
-// the rest. The schemas are JSON Schema 2020-12 and say what the server
+// [tyr.Errors], as application/problem+json, by status: the schema of a
+// status is the problem with the kinds of the status and their problem
+// types as constants, or enums if the status has several, so that a client
+// generated from the document narrows an error by its status, and the
+// problem types are in the document. default stands for the rest.
+// Middleware that answers a request of an operation with a status that the
+// operation declares must write a problem of a kind, see
+// [Routes.WriteError]. The schemas are JSON Schema 2020-12 and say what the server
 // reads and writes, as json/v2 does; the validate tags of requests add
 // their constraints, and doc tags describe fields. The schemas of struct
 // types are in components, named after their types, such as Link for
@@ -190,6 +196,7 @@ func openAPIOf(rs *Routes, info tyr.Info) *openAPIDoc {
 	if err != nil {
 		panic("rest: OpenAPI: " + err.Error()) // a bug: problem encodes
 	}
+	b.problemRef = problemRef
 	b.problem = ordered[*mediaType]{{"application/problem+json", &mediaType{Schema: problemRef}}}
 
 	doc := &openAPIDoc{
@@ -276,9 +283,10 @@ func (p *pathItem) method(method string) **operation {
 
 // openAPIBuilder builds the operations of a document.
 type openAPIBuilder struct {
-	mount   *mount
-	schemas *plan.Schemas
-	problem ordered[*mediaType] // the content of a problem
+	mount      *mount
+	schemas    *plan.Schemas
+	problemRef *jsonschema.Schema  // to the schema of a problem
+	problem    ordered[*mediaType] // the content of a problem
 }
 
 // operation returns the OpenAPI operation of op, which h serves.
@@ -356,11 +364,12 @@ func (b *openAPIBuilder) errors(kinds []tyr.Kind) ordered[*response] {
 	all := append([]tyr.Kind{tyr.KindInvalidArgument}, kinds...)
 	var statuses []int
 	titles := make(map[int][]string)
+	kindsOf := make(map[int][]tyr.Kind)
 	for _, k := range all {
 		status := statusOf(k)
-		title := kindTitle(k)
-		if !slices.Contains(titles[status], title) {
-			titles[status] = append(titles[status], title)
+		if !slices.Contains(kindsOf[status], k) {
+			kindsOf[status] = append(kindsOf[status], k)
+			titles[status] = append(titles[status], kindTitle(k))
 		}
 		if !slices.Contains(statuses, status) {
 			statuses = append(statuses, status)
@@ -369,7 +378,7 @@ func (b *openAPIBuilder) errors(kinds []tyr.Kind) ordered[*response] {
 	slices.Sort(statuses)
 	var out ordered[*response]
 	for _, status := range statuses {
-		r := &response{Description: strings.Join(titles[status], " or "), Content: b.problem}
+		r := &response{Description: strings.Join(titles[status], " or "), Content: b.problemOf(kindsOf[status])}
 		if status == http.StatusUnauthorized && len(b.mount.challenges) > 0 {
 			var examples ordered[example]
 			for i, c := range b.mount.challenges {
@@ -384,6 +393,27 @@ func (b *openAPIBuilder) errors(kinds []tyr.Kind) ordered[*response] {
 		out = append(out, member[*response]{strconv.Itoa(status), r})
 	}
 	return append(out, member[*response]{"default", &response{Description: "An error of another kind, or a problem of the HTTP request itself.", Content: b.problem}})
+}
+
+// problemOf returns the content of the problems of the kinds of a status:
+// the problem, with the kind and the problem type of each as a constant, or
+// as enums of several kinds, which a client narrows an error by.
+func (b *openAPIBuilder) problemOf(kinds []tyr.Kind) ordered[*mediaType] {
+	kind, typ := &jsonschema.Schema{}, &jsonschema.Schema{}
+	for _, k := range kinds {
+		kind.Enum = append(kind.Enum, quote(k.String()))
+		typ.Enum = append(typ.Enum, quote(b.mount.problemType(k)))
+	}
+	if len(kinds) == 1 {
+		kind.Const, kind.Enum = kind.Enum[0], nil
+		typ.Const, typ.Enum = typ.Enum[0], nil
+	}
+	typed := &jsonschema.Schema{AllOf: []*jsonschema.Schema{b.problemRef, {
+		Type:       jsonschema.Types{"object"},
+		Properties: jsonschema.Properties{{Name: "type", Schema: typ}, {Name: "kind", Schema: kind}},
+		Required:   []string{"type", "kind"},
+	}}}
+	return ordered[*mediaType]{{"application/problem+json", &mediaType{Schema: typed}}}
 }
 
 // example adds ex to the parameters, the body, the success and its headers

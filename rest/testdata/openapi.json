@@ -68,7 +68,26 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "/problems/invalid_argument"
+                        },
+                        "kind": {
+                          "const": "invalid_argument"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "kind"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -179,7 +198,26 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "/problems/invalid_argument"
+                        },
+                        "kind": {
+                          "const": "invalid_argument"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "kind"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -189,7 +227,32 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "/problems/already_exists",
+                            "/problems/failed_precondition"
+                          ]
+                        },
+                        "kind": {
+                          "enum": [
+                            "already_exists",
+                            "failed_precondition"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "kind"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -261,7 +324,26 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "/problems/invalid_argument"
+                        },
+                        "kind": {
+                          "const": "invalid_argument"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "kind"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -271,7 +353,26 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "/problems/not_found"
+                        },
+                        "kind": {
+                          "const": "not_found"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "kind"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -310,7 +411,26 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "/problems/invalid_argument"
+                        },
+                        "kind": {
+                          "const": "invalid_argument"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "kind"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -333,7 +453,26 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "/problems/unauthenticated"
+                        },
+                        "kind": {
+                          "const": "unauthenticated"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "kind"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -343,7 +482,26 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "/problems/permission_denied"
+                        },
+                        "kind": {
+                          "const": "permission_denied"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "kind"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -402,7 +560,26 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "/problems/invalid_argument"
+                        },
+                        "kind": {
+                          "const": "invalid_argument"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "kind"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -461,7 +638,26 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "/problems/invalid_argument"
+                        },
+                        "kind": {
+                          "const": "invalid_argument"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "kind"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -508,7 +704,26 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "/problems/invalid_argument"
+                        },
+                        "kind": {
+                          "const": "invalid_argument"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "kind"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -545,7 +760,26 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "/problems/invalid_argument"
+                        },
+                        "kind": {
+                          "const": "invalid_argument"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "kind"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -582,7 +816,26 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "/problems/invalid_argument"
+                        },
+                        "kind": {
+                          "const": "invalid_argument"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "kind"
+                      ]
+                    }
+                  ]
                 }
               }
             }
