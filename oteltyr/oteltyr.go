@@ -56,6 +56,26 @@
 // A request records the metrics of otelhttp, such as
 // http.server.request.duration, with http.route from the RequestInfo and,
 // for a call of REST that fails, error.type.
+//
+// # Queries of pgx and sqlc
+//
+// github.com/exaring/otelpgx traces the queries of pgx, each in the trace
+// of the call that runs it. It names the span of a query after the first
+// word of its SQL, which for every query of sqlc is "--", the start of its
+// -- name: comment; name the spans after the queries instead, as the recipe
+// tasks of github.com/tyr-go/recipes does:
+//
+//	config.ConnConfig.Tracer = otelpgx.NewTracer(otelpgx.WithSpanNameFunc(func(sql string) string {
+//		if rest, ok := strings.CutPrefix(sql, "-- name: "); ok {
+//			if name, _, ok := strings.Cut(rest, " "); ok {
+//				return name // such as GetProject
+//			}
+//		}
+//		for word := range strings.FieldsSeq(sql) {
+//			return strings.ToUpper(word) // such as BEGIN
+//		}
+//		return "query"
+//	}))
 package oteltyr
 
 import (
