@@ -12,12 +12,14 @@
 //	ready := health.NewReadiness(health.Check("db", db.PingContext))
 //
 //	root := http.NewServeMux()
-//	root.Handle("GET /livez", health.Live())
-//	root.Handle("GET /readyz", ready)
+//	root.Handle("GET /health/live", health.Live())
+//	root.Handle("GET /health/ready", ready)
 //	root.Handle("/", middleware.Chain(mux, ...))
 //
 // The outer mux takes the paths of the probes from the routes of the
-// service: a route such as GET /{code} no longer gets /readyz.
+// service, so put the probes where no route can match: a route such as
+// GET /{code} takes every path of one segment, and a probe at /readyz
+// would hide the code readyz from it, while /health/ready can't.
 //
 // The responses tell statuses only, such as
 // {"status":"failed","checks":{"db":"failed"}}: the errors of the checks

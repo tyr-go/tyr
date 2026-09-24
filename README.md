@@ -415,21 +415,21 @@ Package `health` answers the probes of balancers. Readiness runs its checks in p
 ```go
 ready := health.NewReadiness(health.Check("db", db.PingContext))
 root := http.NewServeMux()
-root.Handle("GET /livez", health.Live())
-root.Handle("GET /readyz", ready)
+root.Handle("GET /health/live", health.Live())
+root.Handle("GET /health/ready", ready)
 root.Handle("/", service)
 
-// GET /readyz while the database is down, then up
-// => /readyz 503 {"status":"failed","checks":{"db":"failed"}}
-// => /readyz 200 {"status":"ok","checks":{"db":"ok"}}
+// GET /health/ready while the database is down, then up
+// => /health/ready 503 {"status":"failed","checks":{"db":"failed"}}
+// => /health/ready 200 {"status":"ok","checks":{"db":"ok"}}
 
 // told to stop, the service drains: readiness fails while the server serves on
 ready.Drain(ctx, 5*time.Second)
-// => /readyz 503 {"status":"draining"}
-// => /livez 200 {"status":"ok"}
+// => /health/ready 503 {"status":"draining"}
+// => /health/live 200 {"status":"ok"}
 ```
 
-`srv.Shutdown` goes after the drain: it stops accepting connections at once, and the drain gives the balancers the time to take the traffic away first.
+`srv.Shutdown` goes after the drain: it stops accepting connections at once, and the drain gives the balancers the time to take the traffic away first. The outer mux takes the paths of the probes from the routes of the service, so they go where no route can match: two segments are past a route such as `GET /{code}`.
 
 ### [Measure requests by route and operation](https://pkg.go.dev/github.com/tyr-go/tyr#example-RequestInfo)
 
