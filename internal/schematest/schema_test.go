@@ -109,9 +109,10 @@ func failures(t *testing.T, sch *jsonschema.Schema, data []byte) []string {
 		if k, ok := e.ErrorKind.(*kind.PropertyNames); ok {
 			// The failure is the member of the name; its causes are of the
 			// name, at no location. And v6.0.3 gives the error the live
-			// location of its validator, which later errors overwrite, so
-			// the location is the object of the parent, and the member of
-			// it that the schema of the names is at: properties/<name>.
+			// location of its validator, which later errors overwrite
+			// (https://github.com/santhosh-tekuri/jsonschema/issues/276),
+			// so the location is the object of the parent, and the member
+			// of it that the schema of the names is at: properties/<name>.
 			at := pointer(parent)
 			if i := strings.LastIndex(e.SchemaURL, "/properties/"); i >= 0 {
 				name, _, _ := strings.Cut(e.SchemaURL[i+len("/properties/"):], "/")
