@@ -65,7 +65,7 @@ tyr decodes the request, from the JSON body and then the fields tagged `path`, `
 - Handlers are plain functions, [`func(ctx, Req) (Res, error)`](https://pkg.go.dev/github.com/tyr-go/tyr#Handler), with no HTTP types
 - One operation over [REST](https://pkg.go.dev/github.com/tyr-go/tyr/rest) and [JSON-RPC 2.0](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc), by its name
 - [Contracts](https://pkg.go.dev/github.com/tyr-go/tyr#Define) that the server and a typed [JSON-RPC client](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Client) share, checked by the compiler, without codegen, and an [in-process client](https://pkg.go.dev/github.com/tyr-go/tyr/inprocess#Client) for tests
-- [OpenAPI 3.1](https://pkg.go.dev/github.com/tyr-go/tyr/rest#Routes.OpenAPI) and [OpenRPC](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Discover) documents made of the same types and contracts: JSON Schemas of what the server reads and writes, with the constraints of the `validate` tags, and the summaries, errors and examples of the contracts
+- [OpenAPI 3.1](https://pkg.go.dev/github.com/tyr-go/tyr/rest#Routes.OpenAPI) and [OpenRPC](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Discover) documents made of the same types and contracts: JSON Schemas of what the server reads and writes, with the constraints of the `validate` tags, the summaries, errors and examples of the contracts, and errors typed by status in OpenAPI, which generated clients narrow; served, or as bytes for tools in CI
 - [Binding](https://pkg.go.dev/github.com/tyr-go/tyr/rest#hdr-Requests) from the JSON body, the path, the query and headers
 - [Validation](https://pkg.go.dev/github.com/tyr-go/tyr#hdr-Validation) by tags in the syntax of go-playground/validator and by a `Validate` method, and with [all of go-playground](https://pkg.go.dev/github.com/tyr-go/tyr/validate/playground), or another [validator](https://pkg.go.dev/github.com/tyr-go/tyr#TagValidator), when the subset of the core isn't enough
 - [Errors of kinds](https://pkg.go.dev/github.com/tyr-go/tyr#Kind): RFC 9457 problems over REST, error codes over JSON-RPC
@@ -109,6 +109,7 @@ Týr, the Norse god of law and oaths, put his hand in Fenrir's jaws as the pledg
 - The schemas of requests say what the `validate` tags demand as far as JSON Schema can: `email` and `url` become formats, which the rules of go-playground don't match exactly, the rules of a type that JSON carries by methods of its own, such as an enum written as its name, add nothing, and a `Validate` method doesn't show. The schemas of results have no constraints: the server doesn't check what it writes.
 - The schema of an element of a slice or a map is that of its type, with the constraints of its `validate` tags, but without `dive` the server doesn't check elements: `{"items":[{}]}` passes although the schema of an item requires its members. Check elements in a `Validate` method, or with `dive` of `validate/playground`.
 - Some JSON fits the schema of a request and still gets a 400, since JSON Schema can't tell how a value is written: an integer written as `1.0` or `1e2`, an integer beyond the range of its type or a number with the `string` option beyond it (the schemas bound integers of 8, 16 and 32 bits), a `float32` beyond its range, a time in RFC 3339 that `time.Parse` doesn't read, such as with a lowercase `t` or a leap second, bytes not in base64, a key of a map that isn't of the type of its keys, a string that a type which parses itself rejects, and a name given twice. Send values as `encoding/json` writes them, as generated clients do.
+- The OpenAPI document promises clients a kind with each status that an operation declares. Middleware that answers a request of an operation with such a status, such as the protection against cross-site requests with its 403, must write its problem by [`Routes.WriteError`](https://pkg.go.dev/github.com/tyr-go/tyr/rest#Routes.WriteError) with a kind: a problem without one, or plain text, contradicts the schema of the status.
 - Authorization belongs in interceptors, not in the middleware of a route: over JSON-RPC, an operation has no route of its own.
 
 ## Examples
@@ -358,9 +359,11 @@ mux.Handle("GET /openapi.json", routes.OpenAPI(tyr.Info{Title: "links", Version:
 
 // GET /openapi.json: its method, path, operationId, summary and responses
 // => get /links/{code} links.get Get a link [200 400 404 default]
+// the kind and the problem type in the schema of 404
+// => 404: not_found /problems/not_found
 ```
 
-Every operation may fail with `invalid_argument`, so 400 is always there; `default` stands for the rest. JSON-RPC answers `rpc.discover` with the OpenRPC document of the same operations:
+Every operation may fail with `invalid_argument`, so 400 is always there; `default` stands for the rest. The schema of a status is the problem with the kinds of the status and their problem types, as constants, or enums if the status has several: a client generated from the document, such as by openapi-typescript, narrows an error by its status, and the problem types that tell errors apart are in the document. JSON-RPC answers `rpc.discover` with the OpenRPC document of the same operations:
 
 <!-- Output: jsonrpc.ExampleDiscover -->
 ```go
@@ -375,6 +378,8 @@ mux.Handle("POST /rpc", jsonrpc.Handler(api, jsonrpc.Discover(tyr.Info{Title: "l
 ```
 
 The schemas say what the server reads and writes, as `encoding/json/v2` does, but for the gaps that [Limitations](#limitations) lists: the elements of slices and maps, which the server doesn't check, and JSON that fits a schema but doesn't decode. A member of a request is required if the server rejects the request without it. The schema of a type is named after it and its direction only, `Link` in results and `LinkInput` in requests, so that adding an operation renames no schema of the code generated from the documents; two types of one name make the document panic rather than get renamed, and a method [`SchemaName`](https://pkg.go.dev/github.com/tyr-go/tyr#SchemaNamer) settles it. The body of a request is part of its operation.
+
+[`routes.OpenAPIJSON`](https://pkg.go.dev/github.com/tyr-go/tyr/rest#Routes.OpenAPIJSON) and [`jsonrpc.OpenRPCJSON`](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#OpenRPCJSON) return the same documents as bytes, without a server, for tools such as the generation of clients in CI.
 
 ### [Log with the request ID and the operation](https://pkg.go.dev/github.com/tyr-go/tyr#example-NewLogHandler)
 
@@ -432,7 +437,7 @@ handler := middleware.Chain(mux, cors.Handler, cors.CrossOriginProtection().Hand
 // => POST from https://other.example.com: 403, allow origin "", expose ""
 ```
 
-In a whole chain, CORS goes under Logger, which then logs preflight requests, and above Recover, whose 500 keeps its headers, so a page can read it.
+In a whole chain, CORS goes under Logger, which then logs preflight requests, and above Recover, whose 500 keeps its headers, so a page can read it. The protection denies in plain text; in front of operations, its deny handler should write `permission_denied` by `routes.WriteError`, as the documentation of [`CORS.CrossOriginProtection`](https://pkg.go.dev/github.com/tyr-go/tyr/middleware#CORS.CrossOriginProtection) shows.
 
 ### [Probe liveness and readiness](https://pkg.go.dev/github.com/tyr-go/tyr/health#example-Readiness)
 
@@ -527,7 +532,8 @@ A whole service, [`examples/shortlink`](examples/shortlink), is a URL shortener 
 - [x] v0.5: stable names of the schemas of the documents, and names of one's own by `SchemaName`
 - [x] v0.6: timeouts of operations, CORS, and health probes with a drain before shutdown
 - [x] v0.7: OpenTelemetry (`oteltyr`), a validator of your own and all of go-playground/validator (`validate/playground`), the IDs of the trace in the logs
-- [ ] tyr-go/recipes: a reference service on Postgres and a guide from NestJS; typed errors in OpenAPI and the documents as bytes
+- [x] v0.8: errors typed by status in OpenAPI, and the documents as bytes
+- [ ] tyr-go/recipes: a reference service on Postgres and a guide from NestJS
 - [ ] MCP, then fuzzing, optimizations and a review of the API before v1
 - [ ] Later: a REST client, a TypeScript client and NATS
 

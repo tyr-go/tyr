@@ -123,11 +123,20 @@ func ExampleRoutes_OpenAPI() {
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/openapi.json", nil))
+	type schema struct {
+		AllOf      []schema          `json:"allOf"`
+		Properties map[string]schema `json:"properties"`
+		Const      any               `json:"const"`
+	}
 	var doc struct {
 		Paths map[string]map[string]struct {
-			OperationID string         `json:"operationId"`
-			Summary     string         `json:"summary"`
-			Responses   map[string]any `json:"responses"`
+			OperationID string `json:"operationId"`
+			Summary     string `json:"summary"`
+			Responses   map[string]struct {
+				Content map[string]struct {
+					Schema schema `json:"schema"`
+				} `json:"content"`
+			} `json:"responses"`
 		} `json:"paths"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
@@ -136,10 +145,14 @@ func ExampleRoutes_OpenAPI() {
 	for path, item := range doc.Paths {
 		for method, op := range item {
 			fmt.Println(method, path, op.OperationID, op.Summary, slices.Sorted(maps.Keys(op.Responses)))
+			// The schema of a status is the problem with its kinds.
+			typed := op.Responses["404"].Content["application/problem+json"].Schema.AllOf[1].Properties
+			fmt.Println("404:", typed["kind"].Const, typed["type"].Const)
 		}
 	}
 	// Output:
 	// get /links/{code} links.get Get a link [200 400 404 default]
+	// 404: not_found /problems/not_found
 }
 
 func ExampleRoutes_WriteError() {
