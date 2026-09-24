@@ -3,7 +3,7 @@ module github.com/tyr-go/tyr/oteltyr
 go 1.27
 
 require (
-	github.com/tyr-go/tyr v0.8.0
+	github.com/tyr-go/tyr v0.9.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/metric v1.46.0
