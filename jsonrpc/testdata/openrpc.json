@@ -1,0 +1,323 @@
+{
+  "openrpc": "1.4.1",
+  "info": {
+    "title": "links",
+    "description": "Short links.",
+    "version": "1.0.0"
+  },
+  "methods": [
+    {
+      "name": "links.create",
+      "summary": "Create a link",
+      "description": "Without a code, the link gets a random one.",
+      "tags": [
+        {
+          "name": "links"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "url",
+          "description": "Where the link leads.",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uri",
+            "minLength": 1,
+            "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://[^/?#]"
+          }
+        },
+        {
+          "name": "code",
+          "schema": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 16
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/docLink"
+        }
+      },
+      "errors": [
+        {
+          "code": -32602,
+          "message": "invalid argument",
+          "data": {
+            "kind": "invalid_argument"
+          }
+        },
+        {
+          "code": 409,
+          "message": "already exists or failed precondition"
+        }
+      ],
+      "examples": [
+        {
+          "name": "with a code",
+          "params": [
+            {
+              "name": "url",
+              "value": "https://go.dev"
+            },
+            {
+              "name": "code",
+              "value": "go-home"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": {
+              "code": "go-home",
+              "url": "https://go.dev",
+              "created_at": "2026-09-24T00:00:00Z"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "links.get",
+      "tags": [
+        {
+          "name": "links"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "code",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "anyOf": [
+            {
+              "$ref": "#/components/schemas/docLink"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "errors": [
+        {
+          "code": -32602,
+          "message": "invalid argument",
+          "data": {
+            "kind": "invalid_argument"
+          }
+        },
+        {
+          "code": 404,
+          "message": "not found",
+          "data": {
+            "kind": "not_found"
+          }
+        }
+      ]
+    },
+    {
+      "name": "links.delete",
+      "tags": [
+        {
+          "name": "admin"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "code",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "type": "object"
+        }
+      },
+      "errors": [
+        {
+          "code": -32602,
+          "message": "invalid argument",
+          "data": {
+            "kind": "invalid_argument"
+          }
+        },
+        {
+          "code": 401,
+          "message": "unauthenticated",
+          "data": {
+            "kind": "unauthenticated"
+          }
+        },
+        {
+          "code": 403,
+          "message": "permission denied",
+          "data": {
+            "kind": "permission_denied"
+          }
+        }
+      ],
+      "deprecated": true
+    },
+    {
+      "name": "links.purge",
+      "summary": "Purge the links to a host",
+      "tags": [
+        {
+          "name": "admin"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "host",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253
+          }
+        },
+        {
+          "name": "limit",
+          "schema": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          }
+        },
+        {
+          "name": "links",
+          "schema": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/docLinkInput"
+            }
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/docPurged"
+        }
+      },
+      "errors": [
+        {
+          "code": -32602,
+          "message": "invalid argument",
+          "data": {
+            "kind": "invalid_argument"
+          }
+        },
+        {
+          "code": 401,
+          "message": "unauthenticated",
+          "data": {
+            "kind": "unauthenticated"
+          }
+        },
+        {
+          "code": 403,
+          "message": "permission denied",
+          "data": {
+            "kind": "permission_denied"
+          }
+        }
+      ],
+      "examples": [
+        {
+          "name": "a host",
+          "params": [
+            {
+              "name": "host",
+              "value": "example.com"
+            },
+            {
+              "name": "links",
+              "value": []
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": {
+              "purged": 2
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "components": {
+    "schemas": {
+      "docLink": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "The code of the link."
+          },
+          "url": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "code",
+          "url",
+          "created_at"
+        ]
+      },
+      "docLinkInput": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "The code of the link."
+          },
+          "url": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "docPurged": {
+        "type": "object",
+        "properties": {
+          "purged": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "purged"
+        ]
+      }
+    }
+  }
+}

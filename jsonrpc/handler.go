@@ -17,17 +17,19 @@ import (
 
 // handler is the http.Handler that Handler returns.
 type handler struct {
-	api *tyr.API                  // logs with its Logger
-	ops map[string]*tyr.Operation // by name
+	api      *tyr.API                  // logs with its Logger
+	ops      map[string]*tyr.Operation // by name
+	document jsontext.Value            // the OpenRPC document, with Discover
 	config
 }
 
 // call is a request object, checked.
 type call struct {
-	id     jsontext.Value // nil for a notification
-	op     *tyr.Operation // nil if err is set
-	params jsontext.Value // nil for a zero request
-	err    *errorObject   // why the call can't be made, if it can't
+	id       jsontext.Value // nil for a notification
+	op       *tyr.Operation // nil if err is set or the call is rpc.discover
+	params   jsontext.Value // nil for a zero request
+	err      *errorObject   // why the call can't be made, if it can't
+	discover bool           // the call is rpc.discover, which the handler answers
 }
 
 // outcome is what the call of an operation returned, with the context it
@@ -162,7 +164,12 @@ func (h *handler) parse(v jsontext.Value) call {
 		return c
 	}
 	if c.op = h.ops[method]; c.op == nil {
-		c.params, c.err = nil, methodNotFound()
+		c.params = nil
+		if method == discoverMethod && h.document != nil {
+			c.discover = true
+		} else {
+			c.err = methodNotFound()
+		}
 	}
 	return c
 }

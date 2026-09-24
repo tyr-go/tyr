@@ -109,8 +109,9 @@ type Option func(*config)
 
 // config is the configuration of a Handler.
 type config struct {
-	maxBatch int   // calls in a batch
-	limit    int64 // of the request body
+	maxBatch int       // calls in a batch
+	limit    int64     // of the request body
+	discover *tyr.Info // with Discover: the API, as the OpenRPC document tells of it
 }
 
 // MaxBatch limits a batch to n calls, 50 by default: a larger batch gets a
@@ -135,6 +136,33 @@ func MaxBodyBytes(n int64) Option {
 	return func(c *config) { c.limit = n }
 }
 
+// Discover makes [Handler] answer the method rpc.discover with the OpenRPC
+// 1.4 document of the operations it serves, with info on the API, as the
+// OpenRPC specification has it:
+//
+//	mux.Handle("POST /rpc", jsonrpc.Handler(api, jsonrpc.Discover(tyr.Info{Title: "shortlink", Version: "1.0.0"})))
+//
+// An operation is a method of its name, with its documentation (see
+// [tyr.Doc]): its params, by name, are the members of its request, its
+// result is its result, and its errors are invalid_argument, which any call
+// may get, and the kinds of [tyr.Errors], one per code. The schemas are JSON
+// Schema Draft 7 and say what the server reads and writes, as json/v2 does;
+// the validate tags of requests add their constraints, and doc tags
+// describe fields.
+//
+// The document is made once, by Handler, which panics on a type of a
+// request or a result with a field that JSON can't carry, such as a
+// time.Duration. rpc.discover isn't an operation: the interceptors don't
+// see it, and its params are ignored. Without Discover, it is a method
+// that doesn't exist, as any other name that starts with "rpc.". Discover
+// panics if info has no Title or Version.
+func Discover(info tyr.Info) Option {
+	if info.Title == "" || info.Version == "" {
+		panic("jsonrpc: Discover: the Info needs a Title and a Version")
+	}
+	return func(c *config) { c.discover = &info }
+}
+
 // Handler seals api and returns a handler that serves its operations over
 // JSON-RPC 2.0, configured by opts. It serves the operations api has at
 // the time: registering one after Handler panics, as for a sealed API.
@@ -153,6 +181,9 @@ func Handler(api *tyr.API, opts ...Option) http.Handler {
 	api.Seal()
 	for op := range api.Operations() {
 		h.ops[op.Name()] = op
+	}
+	if h.discover != nil {
+		h.document = openRPCOf(api, *h.discover)
 	}
 	return h
 }

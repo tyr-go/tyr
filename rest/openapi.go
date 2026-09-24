@@ -390,7 +390,7 @@ func (b *openAPIBuilder) example(o *operation, h *handler, members []plan.Member
 	body := ordered[jsontext.Value]{}
 	for _, mem := range members {
 		v, ok := values[mem.Name]
-		if !ok {
+		if !ok || v.Kind() == 'n' { // null is as good as none: it decodes to the zero value
 			continue
 		}
 		if i := slices.IndexFunc(o.Parameters, func(p *parameter) bool { return h.bindsMember(p, mem.Name) }); i >= 0 {

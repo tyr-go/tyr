@@ -77,6 +77,8 @@ func (h *handler) respond(c call, o outcome) *response {
 	switch {
 	case c.err != nil:
 		r.Error = c.err
+	case c.discover:
+		r.Result = h.document
 	case o.err != nil:
 		r.Error = h.errorOf(o.ctx, o.err)
 	default:
