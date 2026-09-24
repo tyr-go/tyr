@@ -2,7 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/tyr-go/tyr.svg)](https://pkg.go.dev/github.com/tyr-go/tyr)
 [![CI](https://github.com/tyr-go/tyr/actions/workflows/ci.yml/badge.svg)](https://github.com/tyr-go/tyr/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/tag/tyr-go/tyr?sort=semver&label=release)](https://github.com/tyr-go/tyr/tags)
+[![Release](https://img.shields.io/github/v/release/tyr-go/tyr?sort=semver)](https://github.com/tyr-go/tyr/releases/latest)
 [![Go](https://img.shields.io/github/go-mod/go-version/tyr-go/tyr)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -533,7 +533,7 @@ A whole service, [`examples/shortlink`](examples/shortlink), is a URL shortener 
 - [x] v0.6: timeouts of operations, CORS, and health probes with a drain before shutdown
 - [x] v0.7: OpenTelemetry (`oteltyr`), a validator of your own and all of go-playground/validator (`validate/playground`), the IDs of the trace in the logs
 - [x] v0.8: errors typed by status in OpenAPI, and the documents as bytes
-- [ ] tyr-go/recipes: a reference service on Postgres and a guide from NestJS
+- [x] [tyr-go/recipes](https://github.com/tyr-go/recipes): a reference service on Postgres and a guide from NestJS
 - [ ] MCP, then fuzzing, optimizations and a review of the API before v1
 - [ ] Later: a REST client, a TypeScript client and NATS
 
