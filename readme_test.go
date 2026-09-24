@@ -21,6 +21,8 @@ var readmePackages = map[string]string{
 	"health":     "health",
 	"jsonrpc":    "jsonrpc",
 	"middleware": "middleware",
+	"oteltyr":    "oteltyr",
+	"playground": "validate/playground",
 	"rest":       "rest",
 }
 

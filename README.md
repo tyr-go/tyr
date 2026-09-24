@@ -15,7 +15,12 @@ go mod init example.com/links   # if you have no module yet
 go get github.com/tyr-go/tyr
 ```
 
-tyr needs Go 1.27, for generic methods. With `GOTOOLCHAIN=auto`, the default, the go command downloads that toolchain itself. The module depends on the standard library only.
+tyr needs Go 1.27, for generic methods. With `GOTOOLCHAIN=auto`, the default, the go command downloads that toolchain itself. The module depends on the standard library only; two modules of their own bring their dependencies:
+
+```sh
+go get github.com/tyr-go/tyr/oteltyr               # OpenTelemetry
+go get github.com/tyr-go/tyr/validate/playground   # all of go-playground/validator
+```
 
 ## Quickstart
 
@@ -62,13 +67,14 @@ tyr decodes the request, from the JSON body and then the fields tagged `path`, `
 - [Contracts](https://pkg.go.dev/github.com/tyr-go/tyr#Define) that the server and a typed [JSON-RPC client](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Client) share, checked by the compiler, without codegen, and an [in-process client](https://pkg.go.dev/github.com/tyr-go/tyr/inprocess#Client) for tests
 - [OpenAPI 3.1](https://pkg.go.dev/github.com/tyr-go/tyr/rest#Routes.OpenAPI) and [OpenRPC](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Discover) documents made of the same types and contracts: JSON Schemas of what the server reads and writes, with the constraints of the `validate` tags, and the summaries, errors and examples of the contracts
 - [Binding](https://pkg.go.dev/github.com/tyr-go/tyr/rest#hdr-Requests) from the JSON body, the path, the query and headers
-- [Validation](https://pkg.go.dev/github.com/tyr-go/tyr#hdr-Validation) by tags in the syntax of go-playground/validator and by a `Validate` method
+- [Validation](https://pkg.go.dev/github.com/tyr-go/tyr#hdr-Validation) by tags in the syntax of go-playground/validator and by a `Validate` method, and with [all of go-playground](https://pkg.go.dev/github.com/tyr-go/tyr/validate/playground), or another [validator](https://pkg.go.dev/github.com/tyr-go/tyr#TagValidator), when the subset of the core isn't enough
 - [Errors of kinds](https://pkg.go.dev/github.com/tyr-go/tyr#Kind): RFC 9457 problems over REST, error codes over JSON-RPC
 - [Interceptors](https://pkg.go.dev/github.com/tyr-go/tyr#Interceptor) with typed [metadata](https://pkg.go.dev/github.com/tyr-go/tyr#MetaKey) of operations, for authorization, metrics and tracing
 - [Timeouts](https://pkg.go.dev/github.com/tyr-go/tyr#Timeout) of operations and groups, the same over REST, JSON-RPC and each call of a batch
 - [Middleware](https://pkg.go.dev/github.com/tyr-go/tyr/middleware): request IDs, access logs, recovery from panics, and [CORS](https://pkg.go.dev/github.com/tyr-go/tyr/middleware#CORS) that the protection against cross-site requests follows
 - [Health probes](https://pkg.go.dev/github.com/tyr-go/tyr/health): liveness, readiness with checks, and a drain before a graceful shutdown
-- [Logs](https://pkg.go.dev/github.com/tyr-go/tyr#NewLogHandler) with the request ID and the operation, through `log/slog`
+- [Logs](https://pkg.go.dev/github.com/tyr-go/tyr#NewLogHandler) with the request ID and the operation, through `log/slog`, and the IDs of the trace
+- [OpenTelemetry](https://pkg.go.dev/github.com/tyr-go/tyr/oteltyr): spans and metrics of requests and of calls of operations, by the semantic conventions, with otelhttp
 - The [route and the operation](https://pkg.go.dev/github.com/tyr-go/tyr#RequestInfo) of a request, for access logs and metrics
 - No dependencies but the standard library; routing by `http.ServeMux`
 
@@ -98,10 +104,10 @@ Týr, the Norse god of law and oaths, put his hand in Fenrir's jaws as the pledg
 - Request and response only. Streaming, server-sent events and WebSockets go to plain handlers too, and consumers of event streams are out of scope.
 - Timeouts are cooperative: a handler must listen to its context, as a timeout doesn't cut it short. One that doesn't runs on, and the API logs a warning.
 - JSON-RPC takes params by name only.
-- Validation implements a subset of the tags of go-playground/validator, with the semantics of v10.30.5: `required`, `omitempty`, `min`, `max`, `len`, `gt`, `gte`, `lt`, `lte`, `oneof`, `email`, `url`, `http_url` and `uuid`, without `dive` and `|`. An unknown rule panics at startup. Rules between fields go in a `Validate` method; an adapter for all of go-playground is planned.
+- The core implements a subset of the tags of go-playground/validator, with the semantics of v10.30.5: `required`, `omitempty`, `min`, `max`, `len`, `gt`, `gte`, `lt`, `lte`, `oneof`, `email`, `url`, `http_url` and `uuid`, without `dive` and `|`. An unknown rule panics at startup. Rules between fields go in a `Validate` method, or the module `validate/playground` checks the tags with all of go-playground; the rules outside the subset give the documents no keywords.
 - The typed client speaks JSON-RPC and sends one call per request; a REST client is planned.
 - The schemas of requests say what the `validate` tags demand as far as JSON Schema can: `email` and `url` become formats, which the rules of go-playground don't match exactly, the rules of a type that JSON carries by methods of its own, such as an enum written as its name, add nothing, and a `Validate` method doesn't show. The schemas of results have no constraints: the server doesn't check what it writes.
-- The schema of an element of a slice or a map is that of its type, with the constraints of its `validate` tags, but without `dive` the server doesn't check elements: `{"items":[{}]}` passes although the schema of an item requires its members. Check elements in a `Validate` method.
+- The schema of an element of a slice or a map is that of its type, with the constraints of its `validate` tags, but without `dive` the server doesn't check elements: `{"items":[{}]}` passes although the schema of an item requires its members. Check elements in a `Validate` method, or with `dive` of `validate/playground`.
 - Some JSON fits the schema of a request and still gets a 400, since JSON Schema can't tell how a value is written: an integer written as `1.0` or `1e2`, an integer beyond the range of its type or a number with the `string` option beyond it (the schemas bound integers of 8, 16 and 32 bits), a `float32` beyond its range, a time in RFC 3339 that `time.Parse` doesn't read, such as with a lowercase `t` or a leap second, bytes not in base64, a key of a map that isn't of the type of its keys, a string that a type which parses itself rejects, and a name given twice. Send values as `encoding/json` writes them, as generated clients do.
 - Authorization belongs in interceptors, not in the middleware of a route: over JSON-RPC, an operation has no route of its own.
 
@@ -171,6 +177,27 @@ func (r CreateLinkReq) Validate() error {
 ```
 
 Validation runs after the interceptors, so a client that isn't allowed to call an operation learns that, not what's wrong with its request.
+
+### [Validate with all of go-playground](https://pkg.go.dev/github.com/tyr-go/tyr/validate/playground#example-New)
+
+When the subset of the core isn't enough, `validate/playground` checks the tags with all of go-playground/validator: `dive`, rules across fields, formats such as `e164`, and rules of your own. The rules of the subset keep the violations of the core, and the others say what their rule is, or what yours says:
+
+<!-- Output: playground.ExampleNew -->
+```go
+api := tyr.New(tyr.WithValidator(playground.New(playground.Rule("code", validCode, "only a-z, 0-9 and '-'"))))
+
+type CreateReq struct {
+	URL  string   `json:"url" validate:"required,http_url"`
+	Code string   `json:"code" validate:"omitempty,min=4,code"`
+	Tags []string `json:"tags" validate:"max=3,dive,min=2"`
+}
+
+// links.create {"url":"https://go.dev","code":"Go_Dev","tags":["go","x"]}: the violations
+// => /code only a-z, 0-9 and '-'
+// => /tags/1 must be at least 2 characters
+```
+
+The documents get the keywords of the rules of the subset only, so a schema promises nothing that tyr can't vouch for.
 
 ### [Authorize with an interceptor](https://pkg.go.dev/github.com/tyr-go/tyr#example-Interceptor)
 
@@ -457,6 +484,24 @@ func metrics(next http.Handler) http.Handler {
 // => POST /rpc -
 ```
 
+### [Trace with OpenTelemetry](https://pkg.go.dev/github.com/tyr-go/tyr/oteltyr#example-package)
+
+`oteltyr.Handler` makes the spans and the metrics of requests with otelhttp, named after the route that the transport records, and `oteltyr.Interceptor` those of calls: a call of REST is its request, and a call of JSON-RPC gets a span of its own under it. `error.type` is the name of the kind, the same over both transports:
+
+<!-- Output: oteltyr.Example -->
+```go
+api.Use(oteltyr.Interceptor()) // with the global providers
+handler := oteltyr.Handler(mux)
+
+// GET /links/go, GET /links/rust, and links.get of rust over JSON-RPC with the id 7: the spans
+// => server GET /links/{code} status: Unset
+// => server GET /links/{code} error.type=not_found status: Unset
+// => server links.get jsonrpc.request.id=7 rpc.response.status_code=404 error.type=not_found status: Unset
+// => server POST /rpc status: Unset
+```
+
+A span is an error for internal, unavailable and deadline_exceeded only: the failures of the server, not those of requests. `tyr.LogAttrs(oteltyr.TraceIDs)` gives the records of `NewLogHandler` the IDs of the trace.
+
 A whole service, [`examples/shortlink`](examples/shortlink), is a URL shortener built on tyr the way a user would build it: an in-memory store, REST and JSON-RPC, a contract that documents it and that its tests call with the typed client, OpenAPI and OpenRPC documents, validation, `MapError`, authorization with an interceptor, timeouts, middleware with CORS, health probes past it, a graceful shutdown that drains first, and end-to-end tests.
 
 ## Middleware
@@ -469,6 +514,7 @@ A whole service, [`examples/shortlink`](examples/shortlink), is a URL shortener 
 | [`middleware.Recover`](https://pkg.go.dev/github.com/tyr-go/tyr/middleware#Recover) | Turns a panic into a 500 problem and logs it with the stack | under Logger and CORS |
 | [`http.CrossOriginProtection`](https://pkg.go.dev/net/http#CrossOriginProtection) | Rejects unsafe cross-origin requests, against CSRF; from the standard library, or from `CORS.CrossOriginProtection` to trust the origins of CORS | under Recover |
 | [`rest.ProblemHandler`](https://pkg.go.dev/github.com/tyr-go/tyr/rest#ProblemHandler) | Makes the 404 and 405 of the mux problems, as the errors of operations are | around the mux |
+| [`oteltyr.Handler`](https://pkg.go.dev/github.com/tyr-go/tyr/oteltyr#Handler) | Spans and metrics of requests, by otelhttp, with the route that the transport records | around the chain, past the probes |
 
 `middleware.Chain` applies them, the first outermost. Any `func(http.Handler) http.Handler` goes in the chain, those of the standard library too, and middleware of your own, such as authentication, may go under all of them. The probes of [`health`](https://pkg.go.dev/github.com/tyr-go/tyr/health) go past the chain, and timeouts are an option of operations, [`tyr.Timeout`](https://pkg.go.dev/github.com/tyr-go/tyr#Timeout), rather than middleware.
 
@@ -480,8 +526,10 @@ A whole service, [`examples/shortlink`](examples/shortlink), is a URL shortener 
 - [x] v0.4: OpenAPI 3.1 and OpenRPC documents, with JSON Schemas of the same types; problem types of kinds
 - [x] v0.5: stable names of the schemas of the documents, and names of one's own by `SchemaName`
 - [x] v0.6: timeouts of operations, CORS, and health probes with a drain before shutdown
-- [ ] OpenTelemetry and an adapter for all of go-playground/validator
-- [ ] Later: a REST client, a TypeScript client, NATS and MCP
+- [x] v0.7: OpenTelemetry (`oteltyr`), a validator of your own and all of go-playground/validator (`validate/playground`), the IDs of the trace in the logs
+- [ ] tyr-go/recipes: a reference service on Postgres and a guide from NestJS; typed errors in OpenAPI and the documents as bytes
+- [ ] MCP, then fuzzing, optimizations and a review of the API before v1
+- [ ] Later: a REST client, a TypeScript client and NATS
 
 The API may change until v1.
 
@@ -492,6 +540,8 @@ gofmt -l .
 go vet ./...
 go test -race ./...
 golangci-lint run
+(cd oteltyr && go test ./...)
+(cd validate/playground && go test ./...)
 (cd internal/playgroundtest && go test ./...)
 (cd internal/schematest && go test ./...)
 go test ./rest ./jsonrpc ./internal/plan ./examples/shortlink -update
@@ -499,7 +549,8 @@ go test -run '^$' -bench . -benchmem ./...
 ```
 
 - golangci-lint v2.13.2 must be built with Go 1.27, for generic methods: `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2`.
-- `internal/playgroundtest` is a module of its own, so that the root module has no dependencies: it checks that the `validate` tags of the core fail the same fields as go-playground/validator v10.30.5.
+- `oteltyr` and `validate/playground` are modules of their own, published beside tyr with its versions, so that the root module has no dependencies.
+- `internal/playgroundtest` is a module of its own too: it checks that `validate/playground`, all of go-playground/validator v10.30.5, fails the same rules as the core, with the same violations.
 - `internal/schematest` is one too: with a JSON Schema validator, it checks the schemas against the JSON that `encoding/json/v2` writes and reads, in Draft 7 and 2020-12, and every OpenAPI and OpenRPC document of the repository against the official schemas of those formats.
 - `-update` rewrites the golden files, the documents among them.
 - `TestREADME` checks the results in this README against the output of the examples they come from, named by a comment such as `<!-- Output: rest.ExampleMount -->` before the block.
