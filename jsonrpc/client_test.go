@@ -2,6 +2,7 @@ package jsonrpc_test
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -16,6 +18,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/iotest"
 	"testing/synctest"
@@ -77,6 +80,115 @@ func TestNewClientPanics(t *testing.T) {
 		if got := panicValue(func() { jsonrpc.NewClient(tt.endpoint, tt.hc) }); got != tt.want {
 			t.Errorf("NewClient(%q) panicked with %v, want %q", tt.endpoint, got, tt.want)
 		}
+	}
+	if got, want := panicValue(func() { jsonrpc.NewClient("http://links/rpc", http.DefaultClient, nil) }), `jsonrpc: NewClient("http://links/rpc"): nil option`; got != want {
+		t.Errorf("NewClient() with a nil option panicked with %v, want %q", got, want)
+	}
+	for _, n := range []int64{0, -1} {
+		want := fmt.Sprintf("jsonrpc: MaxResponseBytes(%d): want a positive size", n)
+		if got := panicValue(func() { jsonrpc.MaxResponseBytes(n) }); got != want {
+			t.Errorf("MaxResponseBytes(%d) panicked with %v, want %q", n, got, want)
+		}
+	}
+}
+
+func TestClientRedirects(t *testing.T) {
+	// A JSON-RPC endpoint answers with 200, so a redirect is no answer: the
+	// client doesn't follow it, and the call, with the headers that the
+	// Transport adds, such as a token, goes nowhere else.
+	for _, status := range []int{
+		http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther,
+		http.StatusTemporaryRedirect, http.StatusPermanentRedirect,
+	} {
+		var elsewhere atomic.Int32
+		srv := httptest.NewTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/elsewhere" {
+				elsewhere.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"jsonrpc":"2.0","result":{"code":"elsewhere","count":0},"id":1}`)
+				return
+			}
+			http.Redirect(w, r, "http://other.example/elsewhere", status)
+		}))
+		hc := srv.Client()
+		c := jsonrpc.NewClient("http://example.com/rpc", &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			r = r.Clone(r.Context())
+			r.Header.Set("Authorization", "Bearer secret")
+			return hc.Transport.RoundTrip(r)
+		})})
+
+		_, err := c.Call(t.Context(), echoOp, thing{Code: "go"})
+		if he, ok := errors.AsType[*jsonrpc.HTTPError](err); !ok || he.StatusCode != status {
+			t.Errorf("Call() redirected with %d = %v, want an HTTPError with %d", status, err, status)
+		}
+		if n := elsewhere.Load(); n != 0 {
+			t.Errorf("a redirect with %d reached where it points %d times, want none", status, n)
+		}
+	}
+
+	// The client works with a copy: the http.Client given keeps its own
+	// policy.
+	hc := &http.Client{}
+	jsonrpc.NewClient("http://links/rpc", hc)
+	if hc.CheckRedirect != nil {
+		t.Error("NewClient() changed the CheckRedirect of the http.Client given")
+	}
+}
+
+func TestClientResponseLimit(t *testing.T) {
+	get := tyr.Define[thing, string]("things.get")
+	// body is the response to the call, with a result of n bytes.
+	body := func(n int) []byte {
+		return []byte(`{"jsonrpc":"2.0","result":"` + strings.Repeat("a", n) + `","id":1}`)
+	}
+	serving := func(data []byte, header http.Header) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			maps.Copy(w.Header(), header)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(data)
+		})
+	}
+	gzipped := func(data []byte) []byte {
+		var buf bytes.Buffer
+		zw := gzip.NewWriter(&buf)
+		_, _ = zw.Write(data)
+		_ = zw.Close()
+		return buf.Bytes()
+	}
+
+	small := body(1000)
+	tests := []struct {
+		name   string
+		h      http.Handler
+		limit  int64 // 0 for the default
+		larger bool  // than the limit
+	}{
+		{"at the limit", serving(small, nil), int64(len(small)), false},
+		{"a byte over", serving(small, nil), int64(len(small)) - 1, true},
+		{"its length over", serving(small, http.Header{"Content-Length": {strconv.Itoa(len(small))}}), int64(len(small)) - 1, true},
+		// Counted as decompressed: a small body of gzip can be large.
+		{"gzip under", serving(gzipped(body(10000)), http.Header{"Content-Encoding": {"gzip"}}), 20000, false},
+		{"gzip over", serving(gzipped(body(10000)), http.Header{"Content-Encoding": {"gzip"}}), 5000, true},
+		{"default", serving(body(4<<20), nil), 0, true},
+		{"default under", serving(body(4<<20-100), nil), 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var opts []jsonrpc.ClientOption
+			limit := int64(4 << 20)
+			if tt.limit > 0 {
+				opts, limit = append(opts, jsonrpc.MaxResponseBytes(tt.limit)), tt.limit
+			}
+			c := jsonrpc.NewClient("http://example.com/rpc", httptest.NewTestServer(t, tt.h).Client(), opts...)
+			res, err := c.Call(t.Context(), get, thing{})
+			want := fmt.Sprintf("jsonrpc: things.get: invalid response: larger than %d bytes", limit)
+			switch {
+			case tt.larger && (err == nil || err.Error() != want):
+				t.Errorf("Call() = %d bytes, %v; want %s", len(res), err, want)
+			case !tt.larger && err != nil:
+				t.Errorf("Call() = %v, want a result", err)
+			}
+		})
 	}
 }
 

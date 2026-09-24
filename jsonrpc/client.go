@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -90,15 +91,42 @@ import (
 //	})
 type Client struct {
 	endpoint string
-	hc       *http.Client
+	hc       *http.Client  // a copy of that of NewClient, which doesn't follow redirects
+	limit    int64         // of the body of a response
 	ids      atomic.Uint64 // the last id of a call
 }
 
+// defaultMaxResponse is the size limit of responses without
+// MaxResponseBytes.
+const defaultMaxResponse = 4 << 20
+
+// ClientOption configures a [Client].
+type ClientOption func(*Client)
+
+// MaxResponseBytes limits the body of a response to n bytes, 4 MiB by
+// default, counted as the client reads it, after net/http decompresses it:
+// a response compressed with gzip counts at its full size. A larger
+// response fails the call with an error of its own, and the client reads no
+// more of it. MaxResponseBytes panics if n isn't positive.
+func MaxResponseBytes(n int64) ClientOption {
+	if n <= 0 {
+		panic(fmt.Sprintf("jsonrpc: MaxResponseBytes(%d): want a positive size", n))
+	}
+	return func(c *Client) { c.limit = n }
+}
+
 // NewClient returns a client that sends calls to endpoint, an absolute
-// http or https URL, with hc. It panics if endpoint isn't such a URL, as
-// "localhost:8080/rpc" isn't, or hc is nil; hc has no default, since
+// http or https URL, with a copy of hc, configured by opts. The copy
+// doesn't follow redirects: a JSON-RPC endpoint answers every call with
+// 200, so a redirect fails the call with an [*HTTPError] of its status,
+// and the call goes nowhere else, nor do the headers that the Transport of
+// hc adds, such as a token. Changes to hc after NewClient don't reach the
+// client.
+//
+// NewClient panics if endpoint isn't such a URL, as "localhost:8080/rpc"
+// isn't, or hc or an option is nil; hc has no default, since
 // [http.DefaultClient] has no timeout.
-func NewClient(endpoint string, hc *http.Client) *Client {
+func NewClient(endpoint string, hc *http.Client, opts ...ClientOption) *Client {
 	u, err := url.Parse(endpoint)
 	shown := endpoint
 	if err == nil {
@@ -110,16 +138,30 @@ func NewClient(endpoint string, hc *http.Client) *Client {
 	if hc == nil {
 		panic(fmt.Sprintf("jsonrpc: NewClient(%q): nil http.Client", shown))
 	}
-	return &Client{endpoint: endpoint, hc: hc}
+	c := &Client{endpoint: endpoint, hc: noRedirects(hc), limit: defaultMaxResponse}
+	for _, opt := range opts {
+		if opt == nil {
+			panic(fmt.Sprintf("jsonrpc: NewClient(%q): nil option", shown))
+		}
+		opt(c)
+	}
+	return c
+}
+
+// noRedirects returns a copy of hc that doesn't follow redirects, but
+// returns them as its response.
+func noRedirects(hc *http.Client) *http.Client {
+	c := *hc
+	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &c
 }
 
 // Call calls the operation that contract defines with req and returns its
 // result. It sends one request object, whose method is the name of the
 // operation and whose params are req in JSON, and decodes the result into a
-// Res. The
-// request ID of ctx, see [tyr.RequestIDFrom], goes in the X-Request-ID
-// header, if it is 1 to 128 characters of [A-Za-z0-9._:-], as the
-// middleware.RequestID of the next service requires.
+// Res. The request ID of ctx, see [tyr.RequestIDFrom], goes in the
+// X-Request-ID header, if it is 1 to 128 characters of [A-Za-z0-9._:-], as
+// the middleware.RequestID of the next service requires.
 //
 // An error that the server answered is a [*ServerError]. Its Kind is the
 // kind in the data of the error, or else the kind whose errors get its
@@ -138,10 +180,12 @@ func NewClient(endpoint string, hc *http.Client) *Client {
 //   - a failed HTTP exchange, reading the response included, is a
 //     [*url.Error] with the Op "Post", as [http.Client.Do] returns it;
 //     once ctx is done, [errors.Is] finds the error of ctx in it
-//   - a response with a status other than 200 OK is an [*HTTPError]
+//   - a response with a status other than 200 OK, a redirect included, is
+//     an [*HTTPError]
 //   - a request that can't be encoded, a response that isn't the JSON-RPC
-//     response to the call and a result that doesn't decode into a Res
-//     are errors of their own
+//     response to the call, one larger than the limit of
+//     [MaxResponseBytes] and a result that doesn't decode into a Res are
+//     errors of their own
 //
 // None of them is a [*tyr.Error]: see the documentation of [Client] for
 // what a handler that returns them does. Call wraps them with the name of
@@ -179,9 +223,16 @@ func (c *Client) Call[Req, Res any](ctx context.Context, contract tyr.Contract[R
 	if ct := resp.Header.Get("Content-Type"); !jsonreq.IsJSON(ct) {
 		return res, fmt.Errorf("jsonrpc: %s: invalid response: Content-Type is %q, want JSON", name, ct)
 	}
-	data, err := io.ReadAll(resp.Body)
+	if resp.ContentLength > c.limit {
+		return res, c.tooLarge(name)
+	}
+	// One byte over the limit tells a body that is larger.
+	data, err := io.ReadAll(io.LimitReader(resp.Body, min(c.limit, math.MaxInt64-1)+1))
 	if err != nil {
 		return res, fmt.Errorf("jsonrpc: %s: %w", name, exchangeError(ctx, hreq, err))
+	}
+	if int64(len(data)) > c.limit {
+		return res, c.tooLarge(name)
 	}
 
 	result, se, err := parseReply(data, id)
@@ -195,6 +246,12 @@ func (c *Client) Call[Req, Res any](ctx context.Context, contract tyr.Contract[R
 		return res, fmt.Errorf("jsonrpc: %s: decoding the result: %w", name, err)
 	}
 	return res, nil
+}
+
+// tooLarge returns the error of a call of the operation name whose response
+// is larger than the limit of c.
+func (c *Client) tooLarge(name string) error {
+	return fmt.Errorf("jsonrpc: %s: invalid response: larger than %d bytes", name, c.limit)
 }
 
 // request is the request object of a call.
@@ -343,8 +400,8 @@ func kindOfCode(code int) tyr.Kind {
 // than 200 OK. A JSON-RPC server answers every call with 200, errors
 // included, so another status means that no answer came: a load balancer
 // replies 502, 503 or 504 while the service is being deployed, a wrong
-// endpoint gets 404, and a request that the server doesn't take as
-// JSON-RPC gets 405, 413 or 415.
+// endpoint gets 404 or a redirect, which the client doesn't follow, and a
+// request that the server doesn't take as JSON-RPC gets 405, 413 or 415.
 type HTTPError struct {
 	StatusCode int // such as 502
 }
