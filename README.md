@@ -68,6 +68,7 @@ tyr decodes the request, from the JSON body and then the fields tagged `path`, `
 - [OpenAPI 3.1](https://pkg.go.dev/github.com/tyr-go/tyr/rest#Routes.OpenAPI) and [OpenRPC](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Discover) documents made of the same types and contracts: JSON Schemas of what the server reads and writes, with the constraints of the `validate` tags, the summaries, errors and examples of the contracts, and errors typed by status in OpenAPI, which generated clients narrow; served, or as bytes for tools in CI
 - [Binding](https://pkg.go.dev/github.com/tyr-go/tyr/rest#hdr-Requests) from the JSON body, the path, the query and headers
 - [Validation](https://pkg.go.dev/github.com/tyr-go/tyr#hdr-Validation) by tags in the syntax of go-playground/validator and by a `Validate` method, and with [all of go-playground](https://pkg.go.dev/github.com/tyr-go/tyr/validate/playground), or another [validator](https://pkg.go.dev/github.com/tyr-go/tyr#TagValidator), when the subset of the core isn't enough
+- [Enums](https://pkg.go.dev/github.com/tyr-go/tyr#Enum): a type declares its values, which the server checks in requests and results, and the documents list, as unions for the clients generated from them
 - [Errors of kinds](https://pkg.go.dev/github.com/tyr-go/tyr#Kind): RFC 9457 problems over REST, error codes over JSON-RPC
 - [Interceptors](https://pkg.go.dev/github.com/tyr-go/tyr#Interceptor) with typed [metadata](https://pkg.go.dev/github.com/tyr-go/tyr#MetaKey) of operations, for authorization, metrics and tracing
 - [Timeouts](https://pkg.go.dev/github.com/tyr-go/tyr#Timeout) of operations and groups, the same over REST, JSON-RPC and each call of a batch
@@ -106,7 +107,7 @@ Týr, the Norse god of law and oaths, put his hand in Fenrir's jaws as the pledg
 - JSON-RPC takes params by name only.
 - The core implements a subset of the tags of go-playground/validator, with the semantics of v10.30.5: `required`, `omitempty`, `min`, `max`, `len`, `gt`, `gte`, `lt`, `lte`, `oneof`, `email`, `url`, `http_url` and `uuid`, without `dive` and `|`. An unknown rule panics at startup. Rules between fields go in a `Validate` method, or the module `validate/playground` checks the tags with all of go-playground; the rules outside the subset give the documents no keywords.
 - The typed client speaks JSON-RPC and sends one call per request; a REST client is planned.
-- The schemas of requests say what the `validate` tags demand as far as JSON Schema can: `email` and `url` become formats, which the rules of go-playground don't match exactly, the rules of a type that JSON carries by methods of its own, such as an enum written as its name, add nothing, and a `Validate` method doesn't show. The schemas of results have no constraints: the server doesn't check what it writes.
+- The schemas of requests say what the `validate` tags demand as far as JSON Schema can: `email` and `url` become formats, which the rules of go-playground don't match exactly, the rules of a type that JSON carries by methods of its own, such as an int written as its name, add nothing, and a `Validate` method doesn't show. The schemas of results have no constraints but the values of enums, which the server checks: it doesn't check the rest of what it writes.
 - The schema of an element of a slice or a map is that of its type, with the constraints of its `validate` tags, but without `dive` the server doesn't check elements: `{"items":[{}]}` passes although the schema of an item requires its members. Check elements in a `Validate` method, or with `dive` of `validate/playground`.
 - Some JSON fits the schema of a request and still gets a 400, since JSON Schema can't tell how a value is written: an integer written as `1.0` or `1e2`, an integer beyond the range of its type or a number with the `string` option beyond it (the schemas bound integers of 8, 16 and 32 bits), a `float32` beyond its range, a time in RFC 3339 that `time.Parse` doesn't read, such as with a lowercase `t` or a leap second, bytes not in base64, a key of a map that isn't of the type of its keys, a string that a type which parses itself rejects, and a name given twice. Send values as `encoding/json` writes them, as generated clients do.
 - The OpenAPI document promises clients a kind with each status that an operation declares. Middleware that answers a request of an operation with such a status, such as the protection against cross-site requests with its 403, must write its problem by [`Routes.WriteError`](https://pkg.go.dev/github.com/tyr-go/tyr/rest#Routes.WriteError) with a kind: a problem without one, or plain text, contradicts the schema of the status.
@@ -178,6 +179,37 @@ func (r CreateLinkReq) Validate() error {
 ```
 
 Validation runs after the interceptors, so a client that isn't allowed to call an operation learns that, not what's wrong with its request.
+
+### [Declare an enum](https://pkg.go.dev/github.com/tyr-go/tyr#example-Enum)
+
+A named type lists its values with a method, `EnumValues`. The API checks them wherever the type is, in fields, slices and maps: a request with another value is a 400, and a result with one is a bug of the server, an internal error whose log says where the value is. The documents describe the type once, for requests and results, and a client generated from them gets a union:
+
+<!-- Output: tyr.ExampleEnum -->
+```go
+type Status string
+
+const (
+	StatusTodo  Status = "todo"
+	StatusDoing Status = "doing"
+	StatusDone  Status = "done"
+)
+
+func (Status) EnumValues() []Status { return []Status{StatusTodo, StatusDoing, StatusDone} }
+
+type SetStatusReq struct {
+	ID     string `json:"id" path:"id"`
+	Status Status `json:"status" validate:"required"`
+}
+
+// PUT /tasks/42/status {"status":"done"}
+// => 200 {"id":"42","title":"Draw a logo","status":"done"}
+// PUT /tasks/42/status {"status":"later"}
+// => 400 {"type":"/problems/invalid_argument","title":"Invalid Argument","status":400,"detail":"validation failed","kind":"invalid_argument","errors":[{"pointer":"/status","detail":"must be one of: todo, doing, done"}]}
+// the schema of Status in the OpenAPI document
+// => {"type":"string","enum":["todo","doing","done"]}
+```
+
+A field of a request that holds the zero value of its type isn't set, so an optional filter needs nothing more, and `validate:"required"` makes the client send it. A result must have a value in every field that it writes, so a field that may be unset needs `omitzero` or a pointer.
 
 ### [Validate with all of go-playground](https://pkg.go.dev/github.com/tyr-go/tyr/validate/playground#example-New)
 
@@ -336,6 +368,19 @@ if se, ok := errors.AsType[*jsonrpc.ServerError](err); ok && se.Details != nil {
 // => not_found link "gone" not found
 // code "", which GetLinkReq requires
 // => invalid_argument validation failed [{"pointer":"/code","detail":"is required"}]
+```
+
+Headers of your own, such as the token of your service or that of the user who called, come from the option [`jsonrpc.Headers`](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Headers), for each call with its context:
+
+```go
+links := jsonrpc.NewClient(url, hc, jsonrpc.Headers(func(ctx context.Context, h http.Header) error {
+	token, err := tokens.Token(ctx) // a source that refreshes it
+	if err != nil {
+		return err
+	}
+	h.Set("Authorization", "Bearer "+token)
+	return nil
+}))
 ```
 
 A `ServerError` isn't a `*tyr.Error`: a handler that returns it as it is fails with `internal`, and the API logs what the other service answered. So a kind of another service reaches your clients only as you translate it, where you call it: its `unauthenticated` is about your credentials rather than theirs, and its violations point into a request they didn't send. The documentation of [`Client`](https://pkg.go.dev/github.com/tyr-go/tyr/jsonrpc#Client) shows how, and how to report a failed connection or a 503 of a load balancer as `unavailable`.
@@ -534,6 +579,7 @@ A whole service, [`examples/shortlink`](examples/shortlink), is a URL shortener 
 - [x] v0.7: OpenTelemetry (`oteltyr`), a validator of your own and all of go-playground/validator (`validate/playground`), the IDs of the trace in the logs
 - [x] v0.8: errors typed by status in OpenAPI, and the documents as bytes
 - [x] [tyr-go/recipes](https://github.com/tyr-go/recipes): a reference service on Postgres and a guide from NestJS
+- [x] v0.9: enums, checked in requests and results and listed in the documents, and headers of each call of the typed client
 - [ ] MCP, then fuzzing, optimizations and a review of the API before v1
 - [ ] Later: a REST client, a TypeScript client and NATS
 
